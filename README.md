@@ -2,7 +2,9 @@
 
 A first-person zombie wave-survival game that runs entirely in a browser tab. No install, no backend, no login. You hold a village square at golden hour while increasingly unpleasant things walk out of the treeline.
 
-**[▶ Play it](#)** · Built with Three.js, TypeScript and Vite.
+### **[▶ Play it now — sunset-down.vercel.app](https://sunset-down.vercel.app/)**
+
+Built with Three.js, TypeScript and Vite. Desktop, mouse and keyboard, needs WebGL 2.
 
 ---
 
