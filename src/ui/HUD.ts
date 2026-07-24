@@ -130,21 +130,39 @@ export class HUD {
       children: [el('span'), el('span'), el('span'), el('span')],
     });
 
-    // --- Vitals ---
-    this.healthFill = el('span', { className: 'sh-bar__fill' });
-    this.healthGhost = el('span', { className: 'sh-bar__ghost' });
-    this.healthLabel = el('span', { className: 'sh-bar__label' });
-    this.armorFill = el('span', { className: 'sh-bar__fill' });
-    this.armorLabel = el('span', { className: 'sh-bar__label' });
-    this.staminaFill = el('span', { className: 'sh-bar__fill' });
+    // --- Vitals ---------------------------------------------------------
+    // A single bevelled plate holding a heart badge and the three bars, so the
+    // corner reads as one designed object rather than three stacked pills.
+    this.healthFill = el('span', { className: 'sh-vital__fill' });
+    this.healthGhost = el('span', { className: 'sh-vital__ghost' });
+    this.healthLabel = el('span', { className: 'sh-vital__readout' });
+    this.armorFill = el('span', { className: 'sh-vital__fill' });
+    this.armorLabel = el('span', { className: 'sh-vital__readout' });
+    this.staminaFill = el('span', { className: 'sh-vital__fill' });
+
+    const healthRow = el('div', {
+      className: 'sh-vital sh-vital--health',
+      children: [
+        el('span', { className: 'sh-vital__track', children: [this.healthGhost, this.healthFill] }),
+        // Notches sit above the fill and imply a segmented capacity.
+        el('span', { className: 'sh-vital__notches', attrs: { 'aria-hidden': 'true' } }),
+        el('span', { className: 'sh-vital__shine', attrs: { 'aria-hidden': 'true' } }),
+        this.healthLabel,
+      ],
+    });
 
     this.armorRow = el('div', {
-      className: 'sh-bar sh-bar--armor',
-      children: [this.armorFill, this.armorLabel],
+      className: 'sh-vital sh-vital--armor',
+      children: [
+        el('span', { className: 'sh-vital__track', children: [this.armorFill] }),
+        el('span', { className: 'sh-vital__notches', attrs: { 'aria-hidden': 'true' } }),
+        this.armorLabel,
+      ],
     });
+
     this.staminaRow = el('div', {
-      className: 'sh-bar sh-bar--stamina',
-      children: [this.staminaFill],
+      className: 'sh-vital sh-vital--stamina',
+      children: [el('span', { className: 'sh-vital__track', children: [this.staminaFill] })],
     });
 
     this.vitals = el('div', {
@@ -152,11 +170,14 @@ export class HUD {
       attrs: { role: 'status', 'aria-live': 'off' },
       children: [
         el('div', {
-          className: 'sh-bar sh-bar--health',
-          children: [this.healthGhost, this.healthFill, this.healthLabel],
+          className: 'sh-vitals__badge',
+          attrs: { 'aria-hidden': 'true' },
+          children: [el('span', { className: 'sh-vitals__heart', text: '❤' })],
         }),
-        this.armorRow,
-        this.staminaRow,
+        el('div', {
+          className: 'sh-vitals__bars',
+          children: [healthRow, this.armorRow, this.staminaRow],
+        }),
       ],
     });
 
@@ -298,12 +319,23 @@ export class HUD {
     if (Math.abs(healthFraction - this.lastHealth) > 0.0015) {
       this.lastHealth = healthFraction;
       this.healthFill.style.transform = `scaleX(${healthFraction})`;
+      // Hue shifts green → gold → red as you bleed out, so peripheral vision
+      // reads your state from colour alone without parsing the number.
+      const hue = 128 * healthFraction * healthFraction;
+      this.healthFill.style.setProperty('--sh-vital-hue', hue.toFixed(0));
       this.healthLabel.textContent = '';
       this.healthLabel.append(
-        el('span', { text: 'Health' }),
-        el('span', { text: `${Math.ceil(data.health)} / ${Math.round(data.maxHealth)}` }),
+        el('span', { className: 'sh-vital__name', text: 'Health' }),
+        el('span', {
+          className: 'sh-vital__digits',
+          children: [
+            el('b', { text: String(Math.ceil(data.health)) }),
+            el('i', { text: `/${Math.round(data.maxHealth)}` }),
+          ],
+        }),
       );
       this.vitals.classList.toggle('sh-vitals--critical', healthFraction <= 0.3);
+      this.vitals.classList.toggle('sh-vitals--hurt', healthFraction <= 0.6);
     }
 
     // The ghost bar chases the real value, revealing how much was just lost.
@@ -322,8 +354,11 @@ export class HUD {
       this.armorFill.style.transform = `scaleX(${armorFraction})`;
       this.armorLabel.textContent = '';
       this.armorLabel.append(
-        el('span', { text: 'Armor' }),
-        el('span', { text: `${Math.ceil(data.armor)}` }),
+        el('span', { className: 'sh-vital__name', text: 'Armor' }),
+        el('span', {
+          className: 'sh-vital__digits',
+          children: [el('b', { text: String(Math.ceil(data.armor)) })],
+        }),
       );
     }
 

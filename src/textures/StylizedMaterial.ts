@@ -57,7 +57,21 @@ interface StylizedUniforms {
 /** Every patched material's uniform block, ticked once per frame. */
 const registry: StylizedUniforms[] = [];
 
-let patchCounter = 0;
+/**
+ * Program cache keys.
+ *
+ * The injected shader source only ever differs in one way: whether the wind
+ * block is present. Everything else — rim colour, subsurface strength — is a
+ * *uniform*, and Three stores those per material (`materialProperties.uniforms`)
+ * while caching the compiled program separately. So two variants is all we
+ * need, and every stylised material in the game shares one of them.
+ *
+ * Getting this wrong is expensive: keying per material instance forces a
+ * separate compile+link for every single material, which stalls the first
+ * frame for seconds once there are a hundred of them.
+ */
+const CACHE_KEY_WIND = 'sh-stylized-wind';
+const CACHE_KEY_STILL = 'sh-stylized-still';
 
 export function applyStylizedShading<T extends THREE.Material>(
   material: T,
@@ -78,7 +92,7 @@ export function applyStylizedShading<T extends THREE.Material>(
     uWindPhase: { value: options.wind?.phase ?? Math.random() * 100 },
   };
 
-  const cacheKey = `stylized-${hasWind ? 'wind' : 'still'}-${patchCounter++}`;
+  const cacheKey = hasWind ? CACHE_KEY_WIND : CACHE_KEY_STILL;
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -150,8 +164,6 @@ export function applyStylizedShading<T extends THREE.Material>(
     );
   };
 
-  // Without a distinct cache key Three would reuse one compiled program for all
-  // materials sharing the same defines, and every patch would collapse into one.
   material.customProgramCacheKey = () => cacheKey;
 
   registry.push(uniforms);

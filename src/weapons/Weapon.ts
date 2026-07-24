@@ -63,6 +63,8 @@ export class Weapon {
   private magDrop = 0;
   private inspectTimer = 0;
   private equipTimer = 0;
+  /** Grace period before an empty magazine triggers an automatic reload. */
+  private autoReloadDelay = 0;
 
   /** Viewmodel offsets, applied on top of the resting transform. */
   readonly kickPosition = new THREE.Vector3();
@@ -153,8 +155,14 @@ export class Weapon {
     }
 
     if (this.ammoInMagazine <= 0) {
-      audio.sfx.dryFire();
-      this.cooldown = 0.28;
+      // Pulling the trigger on an empty magazine reloads rather than just
+      // clicking — the click only plays when there's genuinely nothing left.
+      if (this.reserveAmmo > 0) {
+        this.startReload();
+      } else {
+        audio.sfx.dryFire();
+        this.cooldown = 0.28;
+      }
       return null;
     }
 
@@ -339,6 +347,16 @@ export class Weapon {
     this.cooldown = Math.max(0, this.cooldown - dt);
     this.equipTimer = Math.max(0, this.equipTimer - dt);
     this.inspectTimer = Math.max(0, this.inspectTimer - dt);
+
+    // Auto-reload once the magazine runs dry. Held back by a short grace period
+    // so the last shot's recoil and muzzle flash read before the hands move,
+    // and so a shell-by-shell shotgun reload doesn't start mid-recoil.
+    if (this.ammoInMagazine <= 0 && !this.isReloading && this.reserveAmmo > 0 && this.equipTimer <= 0) {
+      this.autoReloadDelay += dt;
+      if (this.autoReloadDelay >= 0.28) this.startReload();
+    } else {
+      this.autoReloadDelay = 0;
+    }
     // Accuracy recovers steadily once the trigger stops moving.
     this.bloom = Math.max(0, this.bloom - dt * (this.def.maxBloom > 0 ? this.def.maxBloom * 1.5 : 0));
 

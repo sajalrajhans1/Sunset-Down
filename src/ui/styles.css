@@ -971,15 +971,227 @@ body {
   100% { opacity: 0; transform: translate(-50%, -50%) rotate(45deg) scale(1.6); }
 }
 
-/* --- Bottom-left vitals --- */
+/* --- Bottom-left vitals ---------------------------------------------------
+   One bevelled plate: a heart badge on the left, three stacked bars on the
+   right. The health fill's hue is driven from JS via --sh-vital-hue so colour
+   alone communicates your state in peripheral vision.
+   ------------------------------------------------------------------------ */
+
 .sh-vitals {
   position: absolute;
   left: 2rem;
   bottom: 1.9rem;
   display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.7rem 1.05rem 0.7rem 0.75rem;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(38, 22, 58, 0.78), rgba(20, 11, 32, 0.82));
+  border: 1px solid rgba(255, 210, 150, 0.16);
+  box-shadow:
+    var(--sh-shadow-md),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  min-width: 21rem;
+}
+
+/* Heart badge */
+.sh-vitals__badge {
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255, 120, 130, 0.35), transparent 70%),
+    rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 140, 150, 0.28);
+}
+
+.sh-vitals__heart {
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #ff6b7a;
+  filter: drop-shadow(0 0 8px rgba(255, 90, 110, 0.7));
+  transition: transform 0.2s var(--sh-ease-back);
+}
+
+/* Heartbeat quickens as health drops. */
+.sh-vitals--hurt .sh-vitals__heart {
+  animation: sh-heartbeat 1.5s ease-in-out infinite;
+}
+
+.sh-vitals--critical .sh-vitals__heart {
+  animation-duration: 0.62s;
+  color: #ff3d52;
+}
+
+@keyframes sh-heartbeat {
+  0%, 100% { transform: scale(1); }
+  12% { transform: scale(1.24); }
+  24% { transform: scale(1); }
+  36% { transform: scale(1.15); }
+  50% { transform: scale(1); }
+}
+
+.sh-vitals__bars {
+  display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  min-width: 19rem;
+  gap: 0.38rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Individual bar --- */
+.sh-vital {
+  position: relative;
+  height: 1.28rem;
+  border-radius: 7px;
+  background: rgba(6, 3, 12, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.55);
+}
+
+.sh-vital__track {
+  position: absolute;
+  inset: 2px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.sh-vital__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  transform-origin: left center;
+  transform: scaleX(1);
+  transition: transform 0.2s var(--sh-ease-out);
+}
+
+/* Health fill: hue-driven gradient plus a lighter top half for a glassy read. */
+.sh-vital--health .sh-vital__fill {
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0) 52%),
+    linear-gradient(
+      95deg,
+      hsl(calc(var(--sh-vital-hue, 128) * 1deg) 85% 45%),
+      hsl(calc(var(--sh-vital-hue, 128) * 1deg + 18deg) 95% 62%)
+    );
+  box-shadow: 0 0 16px hsl(calc(var(--sh-vital-hue, 128) * 1deg) 90% 55% / 0.55);
+}
+
+.sh-vital--armor .sh-vital__fill {
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 52%),
+    linear-gradient(95deg, #4fb8ff, #9fc8ff);
+  box-shadow: 0 0 14px rgba(110, 190, 255, 0.5);
+}
+
+.sh-vital--stamina {
+  height: 0.42rem;
+  border-radius: 4px;
+}
+
+.sh-vital--stamina .sh-vital__track {
+  inset: 1px;
+}
+
+.sh-vital--stamina .sh-vital__fill {
+  background: linear-gradient(95deg, #6fe3a8, #c2f0a0);
+  box-shadow: 0 0 10px rgba(111, 227, 168, 0.45);
+}
+
+/* Lagging ghost bar reveals how much was just lost. */
+.sh-vital__ghost {
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: rgba(255, 240, 240, 0.42);
+  transform-origin: left center;
+  transition: transform 0.7s var(--sh-ease-out) 0.15s;
+}
+
+/* Segment notches, drawn as a repeating gradient over the fill. */
+.sh-vital__notches {
+  position: absolute;
+  inset: 2px;
+  border-radius: 5px;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(10% - 1px),
+    rgba(0, 0, 0, 0.42) calc(10% - 1px),
+    rgba(0, 0, 0, 0.42) 10%
+  );
+}
+
+/* Slow specular sweep across the health bar. */
+.sh-vital__shine {
+  position: absolute;
+  inset: 2px;
+  border-radius: 5px;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 65%
+  );
+  transform: translateX(-100%);
+  animation: sh-vital-shine 4.5s ease-in-out infinite;
+}
+
+@keyframes sh-vital-shine {
+  0%, 62% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.sh-vital__readout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.62rem;
+  pointer-events: none;
+}
+
+.sh-vital__name {
+  font-family: var(--sh-font-display);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+.sh-vital__digits {
+  font-family: var(--sh-font-display);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+.sh-vital__digits b {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.sh-vital__digits i {
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sh-vitals--critical {
+  border-color: rgba(255, 80, 100, 0.5);
+  animation: sh-pulse-danger 0.85s ease-in-out infinite;
 }
 
 .sh-bar {
@@ -1046,13 +1258,9 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.sh-vitals--critical .sh-bar--health {
-  animation: sh-pulse-danger 0.85s ease-in-out infinite;
-}
-
 @keyframes sh-pulse-danger {
-  0%, 100% { box-shadow: var(--sh-shadow-sm); }
-  50% { box-shadow: 0 0 22px rgba(255, 60, 80, 0.85); }
+  0%, 100% { box-shadow: var(--sh-shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.09); }
+  50% { box-shadow: 0 0 30px rgba(255, 60, 80, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.09); }
 }
 
 /* --- Bottom-right ammo --- */
@@ -2349,7 +2557,7 @@ body {
   }
 
   .sh-menu__actions { max-width: 100%; }
-  .sh-vitals { left: 1rem; bottom: 1.2rem; min-width: 14rem; }
+  .sh-vitals { left: 1rem; bottom: 1.2rem; min-width: 16rem; padding: 0.55rem 0.8rem 0.55rem 0.6rem; }
   .sh-ammo { right: 1rem; bottom: 1.2rem; }
   .sh-wave { left: 1rem; top: 1rem; }
   .sh-coins { right: 1rem; top: 1rem; }

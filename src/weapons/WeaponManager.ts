@@ -130,18 +130,50 @@ export class WeaponManager {
   // Inventory
   // -------------------------------------------------------------------------
 
+  /**
+   * Returns the arsenal to its starting state.
+   *
+   * The pistol instance is deliberately *kept* rather than rebuilt: its model
+   * geometry and shader programs are already resident on the GPU, so reusing
+   * it makes starting a new run instant instead of re-uploading everything.
+   * Only purchased weapons are torn down.
+   */
   reset(modifiers: WeaponModifiers): void {
-    for (const weapon of this.owned.values()) {
+    for (const [id, weapon] of [...this.owned]) {
+      if (id === 'pistol') continue;
       this.adsNode.remove(weapon.model.root);
       weapon.dispose();
+      this.owned.delete(id);
     }
-    this.owned.clear();
-    this.order = [];
+
+    this.order = WEAPON_ORDER.filter((w) => this.owned.has(w));
     this.activeIndex = 0;
     this.active = null;
     this.adsAmount = 0;
     this.adsTarget = 0;
-    this.grant('pistol', modifiers);
+    this.switchTimer = 0;
+    this.pendingSwitch = null;
+
+    if (!this.owned.has('pistol')) {
+      this.grant('pistol', modifiers);
+    } else {
+      // Restore the surviving pistol to a fresh, fully-loaded state.
+      const pistol = this.owned.get('pistol')!;
+      pistol.setModifiers(modifiers);
+      pistol.reserveAmmo = pistol.def.reserveAmmo;
+      pistol.ammoInMagazine = pistol.magazineCapacity;
+      pistol.model.root.visible = false;
+    }
+
+    this.equipIndex(0, true);
+  }
+
+  /**
+   * Builds the starting weapon during the loading screen so its geometry and
+   * shaders are ready before the player ever presses Play.
+   */
+  prewarm(modifiers: WeaponModifiers): void {
+    if (!this.owned.has('pistol')) this.grant('pistol', modifiers);
     this.equipIndex(0, true);
   }
 

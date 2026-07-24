@@ -169,6 +169,13 @@ export class Game {
     this.handleResize();
     await this.yieldFrame();
 
+    // Build the starting weapon now so its geometry and shaders exist before
+    // the pre-compile pass below, rather than being created on first Play.
+    this.weapons.prewarm(this.stats.toWeaponModifiers());
+
+    this.ui.setLoadingProgress(0.94, 'Compiling shaders');
+    await this.precompileShaders();
+
     this.ui.setLoadingProgress(1, 'Ready');
     this.ui.mainMenu.setRecords(this.economy.records);
     this.ui.finishLoading();
@@ -201,6 +208,40 @@ export class Game {
       requestAnimationFrame(() => requestAnimationFrame(finish));
       window.setTimeout(finish, 80);
     });
+  }
+
+  /**
+   * Compiles and links every shader program while the loading bar is still up.
+   *
+   * Without this, the first frame after pressing Play has to compile the whole
+   * material set at once — the village, all five zombie classes, the weapon,
+   * the particle systems — which reads as a hard stall right when the player
+   * expects the game to start.
+   *
+   * Pooled zombies are hidden, so they're temporarily revealed for the pass:
+   * `compileAsync` walks visible objects only.
+   */
+  private async precompileShaders(): Promise<void> {
+    // compileAsync only walks *visible* objects, but the zombie pool and the
+    // holstered weapons are hidden by design. Reveal everything, compile, then
+    // restore each object's exact previous state.
+    const previousVisibility = new Map<THREE.Object3D, boolean>();
+    this.scene.traverse((object) => {
+      if (!object.visible) {
+        previousVisibility.set(object, false);
+        object.visible = true;
+      }
+    });
+
+    try {
+      await this.renderer.compileAsync(this.scene, this.player.camera);
+    } catch (error) {
+      // Losing the pre-compile costs us the optimisation, not the game: the
+      // programs are simply built lazily on first use instead.
+      console.warn('[Sunset Hollow] Shader pre-compile skipped:', error);
+    } finally {
+      for (const [object, visible] of previousVisibility) object.visible = visible;
+    }
   }
 
   private buildUi(uiRoot: HTMLElement): void {
