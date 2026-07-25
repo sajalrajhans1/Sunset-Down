@@ -5,6 +5,7 @@ import type { EconomySystem } from '../systems/EconomySystem';
 import type { WeaponManager } from '../weapons/WeaponManager';
 import { WEAPONS, type WeaponId } from '../weapons/WeaponDefs';
 import { audio } from '../audio/AudioManager';
+import { WEAPON_ART } from './WeaponArt';
 
 export interface ShopCallbacks {
   onBuyUpgrade: (id: UpgradeId) => boolean;
@@ -227,7 +228,7 @@ export class ShopMenu {
     const dps = Math.round((def.damage * def.pellets) / def.fireInterval);
 
     const card = el('button', {
-      className: `sh-buycard${owned ? ' is-owned' : ''}${!owned && !affordable ? ' is-locked' : ''}`,
+      className: `sh-buycard sh-buycard--weapon${owned ? ' is-owned' : ''}${!owned && !affordable ? ' is-locked' : ''}`,
       attrs: { type: 'button' },
       children: [
         el('div', {
@@ -241,8 +242,20 @@ export class ShopMenu {
           ],
         }),
         el('div', {
-          className: 'sh-buycard__art',
-          children: [el('span', { className: 'sh-buycard__glyph', text: def.icon, attrs: { 'aria-hidden': 'true' } })],
+          className: 'sh-buycard__art sh-buycard__art--weapon',
+          children: [
+            el('img', {
+              className: 'sh-buycard__image',
+              attrs: {
+                src: WEAPON_ART[id],
+                alt: def.name,
+                // Eager: the whole set is ~100 kB and lazy-loading inside a
+                // hidden modal makes the art pop in after the panel opens.
+                loading: 'eager',
+                decoding: 'async',
+              },
+            }),
+          ],
         }),
         el('div', {
           className: 'sh-buycard__stats',

@@ -42,6 +42,21 @@ export interface GunSoundProfile {
 export class SoundBank {
   private listener: ListenerState = { x: 0, z: 0, forwardX: 0, forwardZ: -1 };
 
+  /**
+   * Gunshot voice budget.
+   *
+   * A full gunshot is three layered voices plus a reverb send. An SMG at 14
+   * rounds a second sustains ~60 overlapping nodes, which is enough to starve
+   * the audio thread on a modest machine — the symptom is crackling, because
+   * the graph misses its render deadline rather than because anything clips.
+   *
+   * Past a threshold, extra shots drop to a single dry crack layer. It still
+   * reads as continuous fire but costs a third as much.
+   */
+  private activeGunshots = 0;
+  private static readonly FULL_DETAIL_VOICES = 4;
+  private static readonly MAX_VOICES = 10;
+
   constructor(private readonly core: AudioCore) {}
 
   setListener(state: ListenerState): void {
@@ -88,8 +103,29 @@ export class SoundBank {
   gunshot(profile: GunSoundProfile, position?: Vec3Like): void {
     const { core } = this;
     const t = core.now;
-    const out = this.output(position, 90, profile.space);
+
+    // Hard ceiling: beyond this the ear cannot separate the shots anyway.
+    if (this.activeGunshots >= SoundBank.MAX_VOICES) return;
+
+    const lean = this.activeGunshots >= SoundBank.FULL_DETAIL_VOICES;
+    // Reverb is the most expensive part of the chain, so busy moments get less.
+    const space = lean ? profile.space * 0.25 : profile.space;
+
+    const out = this.output(position, 90, space);
     if (!out) return;
+
+    this.activeGunshots++;
+    const totalLife = Math.max(profile.decay, profile.tail) * 1.9;
+    window.setTimeout(
+      () => {
+        this.activeGunshots = Math.max(0, this.activeGunshots - 1);
+      },
+      totalLife * 1000,
+    );
+
+    // Overlapping shots are quieter, which keeps the sum away from the limiter
+    // and stops sustained fire from pumping the whole mix.
+    const crowding = 1 / (1 + this.activeGunshots * 0.16);
 
     // Slight random detune per shot so sustained fire never sounds looped.
     const variance = 0.92 + Math.random() * 0.16;
@@ -108,7 +144,7 @@ export class SoundBank {
     crackGain.connect(out);
 
     crackGain.gain.setValueAtTime(0.0001, t);
-    crackGain.gain.linearRampToValueAtTime(profile.level, t + 0.002);
+    crackGain.gain.linearRampToValueAtTime(profile.level * crowding, t + 0.002);
     crackGain.gain.exponentialRampToValueAtTime(0.0001, t + profile.decay);
     // Sweeping the filter down as it decays mimics the muzzle blast dispersing.
     bandpass.frequency.setValueAtTime(profile.brightness * variance, t);
@@ -120,6 +156,8 @@ export class SoundBank {
     noise.start(t, Math.random() * 1.5);
     core.disposeAfter(noise, profile.decay + 0.05);
 
+    if (lean) return;
+
     // --- Body --------------------------------------------------------------
     const bodyOsc = core.createOscillator('sine', profile.body * variance);
     const bodyGain = core.createGain(0);
@@ -128,7 +166,7 @@ export class SoundBank {
     bodyOsc.frequency.setValueAtTime(profile.body * variance, t);
     bodyOsc.frequency.exponentialRampToValueAtTime(profile.body * 0.32, t + profile.tail);
     bodyGain.gain.setValueAtTime(0.0001, t);
-    bodyGain.gain.linearRampToValueAtTime(profile.level * 0.85, t + 0.004);
+    bodyGain.gain.linearRampToValueAtTime(profile.level * 0.85 * crowding, t + 0.004);
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + profile.tail);
     bodyOsc.start(t);
     core.disposeAfter(bodyOsc, profile.tail + 0.05);
@@ -141,7 +179,7 @@ export class SoundBank {
     tailFilter.connect(tailGain);
     tailGain.connect(out);
     tailGain.gain.setValueAtTime(0.0001, t + 0.01);
-    tailGain.gain.linearRampToValueAtTime(profile.level * 0.3, t + 0.02);
+    tailGain.gain.linearRampToValueAtTime(profile.level * 0.3 * crowding, t + 0.02);
     tailGain.gain.exponentialRampToValueAtTime(0.0001, t + profile.tail * 1.8);
     tailNoise.start(t, Math.random());
     core.disposeAfter(tailNoise, profile.tail * 1.8 + 0.05);

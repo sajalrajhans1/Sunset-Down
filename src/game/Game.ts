@@ -19,6 +19,7 @@ import { DamageNumbers } from '../systems/DamageNumbers';
 import { CombatSystem } from '../systems/CombatSystem';
 import { WaveSystem, type WaveScaling } from '../systems/WaveSystem';
 import { EconomySystem } from '../systems/EconomySystem';
+import { PerformanceGovernor } from '../systems/PerformanceGovernor';
 
 import { WeaponManager } from '../weapons/WeaponManager';
 import { WEAPONS, type WeaponId } from '../weapons/WeaponDefs';
@@ -79,6 +80,14 @@ export class Game {
   private fpsDisplay = 60;
   private frameMsDisplay = 16.7;
 
+  /** Adaptive quality: keeps the frame rate playable on unknown hardware. */
+  private readonly governor = new PerformanceGovernor({
+    onRenderScale: (scale) => this.applyRenderScale(scale),
+    onPresetChange: (preset) => settings.set('graphics', preset),
+  });
+  private renderScale = 1;
+
+  private lastCountdownBeep = -1;
   private navRefreshTimer = 0;
   private readonly _tmpVec = new THREE.Vector3();
   private readonly _lookDir = new THREE.Vector3();
@@ -354,6 +363,7 @@ export class Game {
     this.village.navGrid.computeField(this.player.position.x, this.player.position.z);
 
     this.runTime = 0;
+    this.governor.reset();
     this.timeScale = 1;
     this.timeScaleTarget = 1;
     this.deathTimer = 0;
@@ -525,12 +535,19 @@ export class Game {
   private onWaveStart(wave: number, isBoss: boolean): void {
     audio.sfx.waveStart(wave);
     this.village.setProgress(wave);
+    this.lastCountdownBeep = -1;
+
+    // Three simultaneous channels so the wave start is unmissable: a banner,
+    // a screen flash, and a kick of camera shake.
     this.ui.hud.showBanner(
       isBoss ? 'Boss Wave' : `Wave ${wave}`,
-      isBoss ? 'Something big is coming' : 'Survive',
+      isBoss ? 'Something big is coming' : 'Zombies incoming',
       isBoss ? 'boss' : 'normal',
     );
-    if (isBoss) this.postFx.flash(0.2, 0xff8080);
+    this.ui.hud.addKillFeedEntry(isBoss ? 'BOSS WAVE' : `Wave ${wave} —`, '⚠️', 'incoming');
+    this.postFx.flash(isBoss ? 0.3 : 0.16, isBoss ? 0xff8080 : 0xffd9a0);
+    this.player.addShake(isBoss ? 0.9 : 0.35);
+    if (isBoss) audio.sfx.bossRoar();
   }
 
   private onWaveCleared(wave: number): void {
@@ -671,6 +688,12 @@ export class Game {
       case 'boot':
       default:
         break;
+    }
+
+    // Only judge performance while actually playing: menus and pause screens
+    // legitimately render far cheaper and would skew the measurement.
+    if (this.state === 'playing') {
+      this.governor.update(rawDelta, rawDelta * 1000);
     }
 
     this.input.endFrame();
@@ -900,7 +923,35 @@ export class Game {
         promptText: prompt,
       },
       this.player.yaw,
+      this.player.position,
+      this.zombies.activeZombies,
     );
+
+    this.updateWaveCountdownAudio(dt);
+  }
+
+  /**
+   * Beeps down the last five seconds before a wave, then punches the screen
+   * when it lands. The countdown is the main "get ready" signal, so it gets
+   * both an audible and a visual channel.
+   */
+  private updateWaveCountdownAudio(dt: number): void {
+    void dt;
+    const phase = this.waves.phase;
+    if (phase !== 'prep' && phase !== 'cleared') {
+      this.lastCountdownBeep = -1;
+      return;
+    }
+
+    const snapshot = this.waves.snapshot(this.zombies.aliveCount);
+    const seconds = Math.ceil(snapshot.prepRemaining);
+    if (seconds > 5 || seconds <= 0) return;
+
+    if (seconds !== this.lastCountdownBeep) {
+      this.lastCountdownBeep = seconds;
+      // Rising pitch as it closes in.
+      audio.sfx.exploderBeep((5 - seconds) * 1.2);
+    }
   }
 
   private render(dt: number): void {
@@ -926,10 +977,17 @@ export class Game {
     }
   }
 
+  /** Applies a resolution multiplier chosen by the performance governor. */
+  private applyRenderScale(scale: number): void {
+    this.renderScale = scale;
+    this.applyQuality();
+  }
+
   private applyQuality(): void {
     const quality: QualityProfile = settings.quality;
 
-    const maxRatio = Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap);
+    const maxRatio =
+      Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap) * this.renderScale;
     this.renderer.setPixelRatio(maxRatio);
     this.renderer.shadowMap.enabled = quality.shadowsEnabled;
 

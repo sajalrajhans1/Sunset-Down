@@ -1703,6 +1703,110 @@ body {
   transform: translateY(-50%);
 }
 
+/* --- Minimap -------------------------------------------------------------- */
+
+.sh-minimap {
+  position: absolute;
+  right: 2rem;
+  bottom: 1.9rem;
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: var(--sh-shadow-md), inset 0 0 24px rgba(0, 0, 0, 0.6);
+}
+
+.sh-minimap__canvas {
+  display: block;
+  border-radius: 50%;
+}
+
+/* Bezel drawn separately so the canvas never has to redraw it. */
+.sh-minimap__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 210, 150, 0.3);
+  box-shadow: inset 0 0 0 3px rgba(12, 6, 22, 0.55);
+  pointer-events: none;
+}
+
+.sh-minimap__label {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--sh-font-display);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: rgba(255, 220, 160, 0.65);
+  pointer-events: none;
+}
+
+/* The ammo readout sits above the minimap rather than beside it. */
+.sh-ammo {
+  bottom: 12.2rem;
+}
+
+/* --- Wave countdown ------------------------------------------------------- */
+
+.sh-countdown {
+  position: absolute;
+  left: 50%;
+  top: 15%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s var(--sh-ease-out);
+}
+
+.sh-countdown.is-active {
+  opacity: 1;
+}
+
+.sh-countdown__label {
+  font-family: var(--sh-font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--sh-text-faint);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
+}
+
+.sh-countdown__value {
+  font-family: var(--sh-font-display);
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sh-gold);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.9);
+}
+
+/* Last five seconds: bigger, red, and it pops on every tick. */
+.sh-countdown.is-imminent .sh-countdown__label {
+  color: var(--sh-red);
+}
+
+.sh-countdown.is-imminent .sh-countdown__value {
+  font-size: 4.4rem;
+  color: var(--sh-red);
+  filter: drop-shadow(0 0 22px rgba(255, 70, 90, 0.75));
+}
+
+.sh-countdown__value.is-tick {
+  animation: sh-countdown-tick 0.5s var(--sh-ease-out);
+}
+
+@keyframes sh-countdown-tick {
+  0% { transform: scale(1.45); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 /* --- Prompts + FPS --- */
 .sh-prompt {
   position: absolute;
@@ -2100,6 +2204,37 @@ body {
   font-size: 2.6rem;
   line-height: 1;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
+}
+
+/* Weapon cards run wider and lead with the render, so the silhouette is the
+   first thing you read — the whole point of a buy menu. */
+.sh-buycard--weapon {
+  grid-column: span 2;
+}
+
+.sh-buycard__art--weapon {
+  height: 7.6rem;
+  padding: 0.3rem;
+}
+
+.sh-buycard__image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The renders ship on a dark plate; blending it away leaves just the gun. */
+  mix-blend-mode: lighten;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.6));
+  transition: transform 0.28s var(--sh-ease-out);
+}
+
+.sh-buycard--weapon:hover .sh-buycard__image {
+  transform: scale(1.06) translateX(2%);
+}
+
+@media (max-width: 900px) {
+  .sh-buycard--weapon {
+    grid-column: span 1;
+  }
 }
 
 .sh-buycard__stats {

@@ -16,6 +16,10 @@ export interface MainMenuCallbacks {
 /**
  * Main menu.
  *
+ * Note: `settingsPanel.root` is deliberately NOT a child of this screen. The
+ * pause menu opens the same panel, and hiding the menu would otherwise hide
+ * the settings dialog along with it.
+ *
  * The cinematic backdrop is the one authored image in the whole project; every
  * other element on this screen — light shafts, floating motes, the animated
  * gradient logo — is CSS, layered on top to give the still image parallax and
@@ -48,7 +52,6 @@ export class MainMenu {
         this.buildContent(),
         el('div', { className: 'sh-menu__footer', text: 'Built with Three.js · WebGL · Web Audio' }),
         this.creditsOverlay,
-        this.settingsPanel.root,
       ],
     });
 
@@ -159,7 +162,7 @@ export class MainMenu {
                     el('dd', { text: 'Sprint' }),
                     el('dt', { children: [kbd('Space')] }),
                     el('dd', { text: 'Jump' }),
-                    el('dt', { children: [kbd('Ctrl')] }),
+                    el('dt', { children: [kbd('C')] }),
                     el('dd', { text: 'Crouch' }),
                     el('dt', { children: [kbd('LMB')] }),
                     el('dd', { text: 'Fire' }),

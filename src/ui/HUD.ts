@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { el, formatCoins } from './dom';
 import { settings } from '../game/Settings';
+import { Minimap } from './Minimap';
+import type { Zombie } from '../components/Zombie';
 import type { WaveSnapshot } from '../systems/WaveSystem';
 import type { Weapon } from '../weapons/Weapon';
 import { clamp01, formatTime } from '../utilities/MathUtils';
@@ -48,6 +50,7 @@ interface DamageArrow {
  */
 export class HUD {
   readonly root: HTMLElement;
+  readonly minimap = new Minimap();
 
   // Cached element references.
   private readonly healthFill: HTMLElement;
@@ -89,6 +92,9 @@ export class HUD {
   private readonly bossFill: HTMLElement;
   private readonly scope: HTMLElement;
   private readonly prompt: HTMLElement;
+  private readonly countdown: HTMLElement;
+  private readonly countdownValue: HTMLElement;
+  private lastCountdownTick = -1;
   private readonly fpsPanel: HTMLElement;
   private readonly fpsValue: HTMLElement;
   private readonly fpsFrame: HTMLElement;
@@ -264,6 +270,18 @@ export class HUD {
 
     this.prompt = el('div', { className: 'sh-prompt' });
 
+    // Pre-wave countdown: the clearest possible signal that a wave is about
+    // to land, sitting dead centre where the player is already looking.
+    this.countdownValue = el('div', { className: 'sh-countdown__value', text: '' });
+    this.countdown = el('div', {
+      className: 'sh-countdown',
+      attrs: { 'aria-hidden': 'true' },
+      children: [
+        el('div', { className: 'sh-countdown__label', text: 'Next wave in' }),
+        this.countdownValue,
+      ],
+    });
+
     this.fpsValue = el('b', { text: '60' });
     this.fpsFrame = el('span', { text: '16.7 ms' });
     this.fpsPanel = el('div', {
@@ -290,8 +308,10 @@ export class HUD {
         this.damageRing,
         this.bossBar,
         this.banner,
+        this.countdown,
         this.prompt,
         this.fpsPanel,
+        this.minimap.root,
       ],
     });
   }
@@ -300,7 +320,17 @@ export class HUD {
   // Per-frame update
   // -------------------------------------------------------------------------
 
-  update(dt: number, data: HudFrameData, cameraYaw: number): void {
+  update(
+    dt: number,
+    data: HudFrameData,
+    cameraYaw: number,
+    playerPosition?: THREE.Vector3,
+    zombies?: readonly Zombie[],
+  ): void {
+    this.updateCountdown(data);
+    if (playerPosition && zombies) {
+      this.minimap.update(dt, playerPosition, cameraYaw, zombies);
+    }
     this.updateVitals(dt, data);
     this.updateAmmo(data);
     this.updateWave(data);
@@ -311,6 +341,34 @@ export class HUD {
     this.updatePrompt(data);
     this.updateFps(data);
     this.updateTransients(dt, cameraYaw);
+  }
+
+  /**
+   * Counts the wave in. The last five seconds tick one number at a time with
+   * an audible beep, so the transition from "shopping" to "fighting" is
+   * impossible to miss.
+   */
+  private updateCountdown(data: HudFrameData): void {
+    const { wave } = data;
+    const arming = (wave.phase === 'prep' || wave.phase === 'cleared') && wave.prepRemaining > 0;
+
+    this.countdown.classList.toggle('is-active', arming);
+    if (!arming) {
+      this.lastCountdownTick = -1;
+      return;
+    }
+
+    const seconds = Math.ceil(wave.prepRemaining);
+    this.countdown.classList.toggle('is-imminent', seconds <= 5);
+
+    if (seconds !== this.lastCountdownTick) {
+      this.lastCountdownTick = seconds;
+      this.countdownValue.textContent = seconds <= 5 ? String(seconds) : formatTime(wave.prepRemaining);
+      // Restart the pop animation on every tick.
+      this.countdownValue.classList.remove('is-tick');
+      void this.countdownValue.offsetWidth;
+      this.countdownValue.classList.add('is-tick');
+    }
   }
 
   private updateVitals(dt: number, data: HudFrameData): void {
@@ -578,6 +636,11 @@ export class HUD {
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle('sh-hud--hidden', !visible);
+  }
+
+  /** Countdown beep, called by the game on each whole second under five. */
+  get countdownSecond(): number {
+    return this.lastCountdownTick;
   }
 
   /** Wipes transient state when a run ends or restarts. */

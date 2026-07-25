@@ -33,8 +33,12 @@ const KEY_BINDINGS: Record<string, GameAction> = {
   Space: 'jump',
   ShiftLeft: 'sprint',
   ShiftRight: 'sprint',
-  ControlLeft: 'crouch',
+  // NOTE: Ctrl is deliberately not bound. Crouch + forward would be Ctrl+W,
+  // which closes the browser tab, and Ctrl+R (crouch + reload) reloads the
+  // page. Neither can be suppressed with preventDefault - they are handled by
+  // the browser before the page ever sees them.
   KeyC: 'crouch',
+  KeyZ: 'crouch',
   KeyR: 'reload',
   KeyE: 'interact',
   KeyF: 'inspect',

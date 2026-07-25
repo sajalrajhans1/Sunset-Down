@@ -67,6 +67,9 @@ export class UIManager {
     this.container.append(
       this.hud.root,
       this.mainMenu.root,
+      // Owned by the menu but mounted at the top level, so it can also be
+      // opened from the pause screen while the menu itself is hidden.
+      this.mainMenu.settingsPanel.root,
       this.shopMenu.root,
       this.pauseMenu.root,
       this.gameOver.root,
