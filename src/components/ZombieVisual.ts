@@ -49,6 +49,9 @@ export interface ZombieVisual {
   /** Collision/hit radius in world units at the current scale. */
   readonly bodyRadius: number;
 
+  /** Radius of the headshot sphere in world units at the current scale. */
+  readonly headRadius: number;
+
   /** Reconfigures the body for a class and colour variant. */
   applyType(def: ZombieTypeDef, colorIndex: number): void;
 

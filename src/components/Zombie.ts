@@ -89,6 +89,8 @@ export class Zombie {
   speed = 2.5;
   radius = 0.36;
   headHeight = 1.4;
+  /** Radius of the headshot sphere, taken from the active body. */
+  headRadius = 0.34;
 
   private facing = 0;
   private gaitPhase = 0;
@@ -191,6 +193,7 @@ export class Zombie {
     this.speed = def.speed * options.speedMultiplier;
     this.radius = visual.bodyRadius;
     this.headHeight = visual.headHeight;
+    this.headRadius = visual.headRadius;
     this.slotAngle = options.slotAngle;
 
     this.position.copy(options.position);

@@ -379,6 +379,7 @@ export class ProceduralZombieVisual implements ZombieVisual {
   bodyColor = 0x8fce8a;
   headHeight = 1.4;
   bodyRadius = 0.36;
+  headRadius = 0.34;
 
   private def: ZombieTypeDef | null = null;
   private lod = -1;
@@ -395,6 +396,7 @@ export class ProceduralZombieVisual implements ZombieVisual {
     this.bodyColor = def.colors[colorIndex % def.colors.length];
     this.headHeight = headHeightFor(def);
     this.bodyRadius = bodyRadiusFor(def);
+    this.headRadius = 0.34 * def.proportions.head * def.scale;
     // The entity owns the root's scale for spawn/death, so the rig's own
     // per-class scale is folded into the body node instead.
     this.rig.root.scale.setScalar(1);

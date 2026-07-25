@@ -290,8 +290,11 @@ export class ZombieManager {
       const along = toX * direction.x + toZ * direction.z;
       if (along < -2 || along > maxDistance + 2) continue;
 
-      const headRadius = 0.34 * zombie.def.proportions.head * zombie.def.scale;
-      const bodyTop = zombie.headHeight - headRadius * 0.5;
+      // Head sphere and body cylinder both come from the active visual, so
+      // they track the rendered body instead of the old primitive rig's
+      // proportions.
+      const headRadius = zombie.headRadius;
+      const bodyTop = zombie.headHeight - headRadius * 0.35;
 
       // --- Head sphere ---
       const headHit = raySphere(
@@ -300,7 +303,7 @@ export class ZombieManager {
         zombie.position.x,
         zombie.position.y + zombie.headHeight,
         zombie.position.z,
-        headRadius * 1.05,
+        headRadius,
         maxDistance,
       );
 
@@ -310,7 +313,7 @@ export class ZombieManager {
         direction,
         zombie.position.x,
         zombie.position.z,
-        zombie.radius * 1.05,
+        zombie.radius,
         zombie.position.y,
         bodyTop,
         maxDistance,

@@ -36,12 +36,23 @@ interface ZombieTemplate {
   normalizeScale: number;
   /** Corrective yaw, in radians, that turns the model to face +Z. */
   facingCorrection: number;
-  /** Head height in normalised units. */
+  /** Head centre height in normalised units. */
   headHeight: number;
+  /** Head sphere radius in normalised units. */
+  headRadius: number;
 }
 
-/** Height of a zombie at class scale 1.0, in metres. */
-const TARGET_HEIGHT = 1.6;
+/**
+ * Height of a zombie at class scale 1.0, in metres. The player's eye sits at
+ * 1.68 m, so this keeps a baseline zombie at roughly eye-to-eye with them.
+ */
+const TARGET_HEIGHT = 1.75;
+
+/**
+ * Head radius as a fraction of total body height. A human head is about a
+ * seventh of standing height, so its radius is roughly half of that.
+ */
+const HEAD_RADIUS_RATIO = 0.068;
 
 let templatePromise: Promise<ZombieTemplate> | null = null;
 let template: ZombieTemplate | null = null;
@@ -119,9 +130,13 @@ export function loadZombieModel(): Promise<ZombieTemplate> {
         // Feet should rest on y = 0 after scaling.
         const footOffset = -box.min.y * normalizeScale;
 
-        const head = findBone(scene, BONE_KEYS.head);
-        const headWorldY = head ? head.getWorldPosition(new THREE.Vector3()).y : height * 0.88;
-        const headHeight = (headWorldY - box.min.y) * normalizeScale;
+        // Head hit sphere, derived from the mesh rather than the head *bone*.
+        // The bone sits at the base of the skull, so centring a sphere on it
+        // puts the headshot volume down in the neck.
+        const headRadiusModel = height * HEAD_RADIUS_RATIO;
+        const headCentreModelY = box.max.y - headRadiusModel * 1.05;
+        const headHeight = (headCentreModelY - box.min.y) * normalizeScale;
+        const headRadius = headRadiusModel * normalizeScale;
 
         scene.position.y = footOffset / normalizeScale;
 
@@ -135,7 +150,7 @@ export function loadZombieModel(): Promise<ZombieTemplate> {
           mesh.frustumCulled = false;
         });
 
-        template = { scene, normalizeScale, facingCorrection, headHeight };
+        template = { scene, normalizeScale, facingCorrection, headHeight, headRadius };
 
         if (import.meta.env.DEV) {
           // Verifying the derived rig is far easier from a log than from the
@@ -144,10 +159,12 @@ export function loadZombieModel(): Promise<ZombieTemplate> {
             findBone(scene, BONE_KEYS[key]),
           );
           console.info(
-            '[Zombie model] height=%s scale=%s facing=%s° bones=%d/%d%s',
+            '[Zombie model] height=%s scale=%s facing=%s° head=%s r=%s bones=%d/%d%s',
             height.toFixed(3),
             normalizeScale.toFixed(3),
             THREE.MathUtils.radToDeg(facingCorrection).toFixed(1),
+            headHeight.toFixed(3),
+            headRadius.toFixed(3),
             resolved.length,
             Object.keys(BONE_KEYS).length,
             resolved.length < Object.keys(BONE_KEYS).length
@@ -181,20 +198,37 @@ function findBone(root: THREE.Object3D, key: string): THREE.Bone | null {
 
 // --- Per-bone animation data -------------------------------------------------
 
+/**
+ * Per-bone rotation axes, derived from anatomy rather than from world axes.
+ *
+ * This model is T-posed, so the arms point along ±X. Rotating an arm about the
+ * model's X axis therefore just twists it along its own length — which is
+ * exactly what a naive "rotate about X to swing forward" produces, and it
+ * looks broken.
+ *
+ * Instead each axis is built as a cross product of the bone's own direction
+ * (bone → child) with a body direction. `cross(boneDir, forward)` is the axis
+ * that moves *this* bone toward forward, whatever way it happens to point. It
+ * also mirrors automatically: the same positive angle swings both the left and
+ * the right arm forward, with no per-side sign flipping.
+ */
 interface BoneRig {
   bone: THREE.Bone;
   restQuaternion: THREE.Quaternion;
-  /** Model-space X axis expressed in this bone's parent space. */
-  axisX: THREE.Vector3;
-  /** Model-space Y axis expressed in this bone's parent space. */
-  axisY: THREE.Vector3;
-  /** Model-space Z axis expressed in this bone's parent space. */
-  axisZ: THREE.Vector3;
+  /** Positive rotation moves the bone toward the body's forward. */
+  swingAxis: THREE.Vector3;
+  /** Positive rotation moves the bone toward the body's left. */
+  spreadAxis: THREE.Vector3;
+  /** Positive rotation raises the bone toward the body's up. */
+  liftAxis: THREE.Vector3;
 }
 
 const _q = new THREE.Quaternion();
 const _parentQuat = new THREE.Quaternion();
 const _inverse = new THREE.Quaternion();
+const _scratchQuat = new THREE.Quaternion();
+const _modelUp = new THREE.Vector3(0, 1, 0);
+const _headAxis = new THREE.Vector3();
 
 export class GlbZombieVisual implements ZombieVisual {
   readonly root = new THREE.Group();
@@ -212,6 +246,7 @@ export class GlbZombieVisual implements ZombieVisual {
   bodyColor = 0x7d9c6e;
   headHeight = 1.5;
   bodyRadius = 0.42;
+  headRadius = 0.12;
 
   private lod = 0;
   private frameCounter = 0;
@@ -241,6 +276,7 @@ export class GlbZombieVisual implements ZombieVisual {
     const pelvis = this.bones.get('pelvis');
     this.restPelvisY = pelvis ? pelvis.bone.position.y : 0;
     this.headHeight = template.headHeight;
+    this.headRadius = template.headRadius;
   }
 
   /**
@@ -287,21 +323,56 @@ export class GlbZombieVisual implements ZombieVisual {
       if (parent) parent.getWorldQuaternion(_parentQuat);
       _inverse.copy(_parentQuat).invert();
 
+      // Body directions expressed in this bone's parent space.
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(_inverse).normalize();
+      const left = new THREE.Vector3(1, 0, 0).applyQuaternion(_inverse).normalize();
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(_inverse).normalize();
+
+      // Direction this bone points, in its parent's space.
+      const childBone = bone.children.find((child) => (child as THREE.Bone).isBone) as
+        | THREE.Bone
+        | undefined;
+      const boneDir = childBone
+        ? childBone.position.clone().applyQuaternion(bone.quaternion)
+        : up.clone().negate();
+      if (boneDir.lengthSq() < 1e-9) boneDir.copy(up).negate();
+      boneDir.normalize();
+
+      // Each cross product degenerates when the bone is parallel to that body
+      // direction, so fall back to a sane perpendicular in those cases.
+      const swingAxis = new THREE.Vector3().crossVectors(boneDir, forward);
+      if (swingAxis.lengthSq() < 1e-6) swingAxis.copy(left);
+      swingAxis.normalize();
+
+      const spreadAxis = new THREE.Vector3().crossVectors(boneDir, left);
+      if (spreadAxis.lengthSq() < 1e-6) spreadAxis.copy(forward);
+      spreadAxis.normalize();
+
+      const liftAxis = new THREE.Vector3().crossVectors(boneDir, up);
+      if (liftAxis.lengthSq() < 1e-6) liftAxis.copy(swingAxis);
+      liftAxis.normalize();
+
       this.bones.set(key, {
         bone,
         restQuaternion: bone.quaternion.clone(),
-        axisX: new THREE.Vector3(1, 0, 0).applyQuaternion(_inverse).normalize(),
-        axisY: new THREE.Vector3(0, 1, 0).applyQuaternion(_inverse).normalize(),
-        axisZ: new THREE.Vector3(0, 0, 1).applyQuaternion(_inverse).normalize(),
+        swingAxis,
+        spreadAxis,
+        liftAxis,
       });
     }
   }
 
-  /** Rotates a bone about a model-space axis, relative to its rest pose. */
-  private rotate(key: BoneKey, axis: 'x' | 'y' | 'z', angle: number, additive = false): void {
+  /** Rotates a bone about one of its anatomical axes, relative to rest. */
+  private rotate(
+    key: BoneKey,
+    axis: 'swing' | 'spread' | 'lift',
+    angle: number,
+    additive = false,
+  ): void {
     const rig = this.bones.get(key);
     if (!rig) return;
-    const vector = axis === 'x' ? rig.axisX : axis === 'y' ? rig.axisY : rig.axisZ;
+    const vector =
+      axis === 'swing' ? rig.swingAxis : axis === 'spread' ? rig.spreadAxis : rig.liftAxis;
     _q.setFromAxisAngle(vector, angle);
     if (additive) rig.bone.quaternion.premultiply(_q);
     else rig.bone.quaternion.copy(rig.restQuaternion).premultiply(_q);
@@ -333,9 +404,13 @@ export class GlbZombieVisual implements ZombieVisual {
       this.materials[i].emissiveIntensity = 1;
     }
 
-    const effectiveHeight = TARGET_HEIGHT * def.scale * lerp(1, p.bodyHeight, 0.4);
-    this.headHeight = (template!.headHeight / TARGET_HEIGHT) * effectiveHeight;
-    this.bodyRadius = 0.3 * def.scale * lerp(1, p.bodyWidth, 0.55);
+    // Hit volumes follow the same non-uniform scale the mesh got, so the
+    // headshot sphere stays glued to where the head actually renders.
+    const verticalScale = def.scale * lerp(1, p.bodyHeight, 0.4);
+    const horizontalScale = def.scale * lerp(1, p.bodyWidth, 0.55);
+    this.headHeight = template!.headHeight * verticalScale;
+    this.headRadius = template!.headRadius * Math.max(verticalScale, horizontalScale);
+    this.bodyRadius = 0.26 * horizontalScale;
 
     this.resetPose();
   }
@@ -370,109 +445,138 @@ export class GlbZombieVisual implements ZombieVisual {
 
     const swing = Math.sin(phase);
     const swing2 = Math.sin(phase * 2);
-    // A limp: one leg drives harder than the other, which instantly reads as
-    // "not a healthy person walking".
-    const limp = 1 + Math.sin(phase) * 0.18 * wobble;
+    // Uneven drive between the legs reads instantly as a limp.
+    const limp = 1 + swing * 0.16 * wobble;
 
-    // --- Legs -------------------------------------------------------------
-    const legAmp = lerp(0.25, 0.95, stride);
-    this.rotate('thighL', 'x', swing * legAmp * limp);
-    this.rotate('thighR', 'x', -swing * legAmp);
+    // --- Legs --------------------------------------------------------------
+    // Positive swing carries a limb forward whichever way it points, so the
+    // two legs simply take opposite signs.
+    const legAmp = lerp(0.22, 0.85, stride);
+    this.rotate('thighL', 'swing', swing * legAmp * limp);
+    this.rotate('thighR', 'swing', -swing * legAmp);
+    // A little stance width so the legs never scissor through each other.
+    this.rotate('thighL', 'spread', 0.07, true);
+    this.rotate('thighR', 'spread', -0.07, true);
 
-    // Knees only bend one way. Drive each calf from the half of the cycle
-    // where that leg is trailing.
-    const kneeAmp = lerp(0.2, 1.25, stride);
-    this.rotate('calfL', 'x', -Math.max(0, -swing) * kneeAmp);
-    this.rotate('calfR', 'x', -Math.max(0, swing) * kneeAmp);
+    // Knees only bend backward, and peak just after the leg passes under the
+    // hips - hence the phase offset rather than a raw half-wave.
+    const kneeAmp = lerp(0.35, 1.5, stride);
+    this.rotate('calfL', 'swing', -Math.max(0, -Math.sin(phase + 0.9)) * kneeAmp);
+    this.rotate('calfR', 'swing', -Math.max(0, Math.sin(phase + 0.9)) * kneeAmp);
 
-    // Feet flatten as they plant and point as they lift.
-    this.rotate('footL', 'x', swing * 0.3 * stride);
-    this.rotate('footR', 'x', -swing * 0.3 * stride);
+    // Ankles roll through the step.
+    this.rotate('footL', 'swing', -swing * 0.28 * stride);
+    this.rotate('footR', 'swing', swing * 0.28 * stride);
 
-    // --- Hips + spine -----------------------------------------------------
+    // --- Hips + spine ------------------------------------------------------
     const pelvis = this.bones.get('pelvis');
     if (pelvis) {
-      // Vertical bob: two bounces per stride, plus a sag on the weak leg.
-      const bob = Math.abs(swing2) * 0.035 * stride * wobble - Math.max(0, swing) * 0.02 * wobble;
+      const bob = Math.abs(swing2) * 0.03 * stride * wobble - Math.max(0, swing) * 0.016 * wobble;
       pelvis.bone.position.y = this.restPelvisY + bob / Math.max(0.001, this.orient.scale.y);
-      this.rotate('pelvis', 'z', -swing * 0.1 * wobble * stride);
-      this.rotate('pelvis', 'y', swing * 0.12 * stride, true);
+      this.rotate('pelvis', 'spread', -swing * 0.06 * wobble * stride);
     }
 
-    // Forward lean scales with speed — sprinters pitch further over.
-    const lean = lerp(0.06, 0.34, stride);
-    this.rotate('spine', 'x', lean * 0.4);
-    this.rotate('spine1', 'x', lean * 0.3);
-    this.rotate('spine2', 'x', lean * 0.2);
-    // Counter-rotate the shoulders against the hips.
-    this.rotate('spine2', 'y', -swing * 0.16 * stride, true);
-    this.rotate('spine4', 'x', lean * 0.15);
+    // Forward lean grows with speed; sprinting zombies pitch right over.
+    const lean = lerp(0.05, 0.4, stride);
+    this.rotate('spine', 'swing', lean * 0.42);
+    this.rotate('spine1', 'swing', lean * 0.3);
+    this.rotate('spine2', 'swing', lean * 0.2);
+    this.rotate('spine4', 'swing', lean * 0.12);
 
-    // --- Head -------------------------------------------------------------
-    // Lolling head that still tracks the player.
-    const headLoll = Math.sin(phase * 0.5 + state.phaseOffset) * 0.12 * wobble;
-    this.rotate('neck', 'x', -lean * 0.7 + Math.sin(phase * 2) * 0.06 * stride);
-    this.rotate('head', 'y', THREE.MathUtils.clamp(state.lookOffset, -0.9, 0.9) * 0.55);
-    this.rotate('head', 'z', headLoll, true);
-    this.rotate('head', 'x', -lean * 0.35, true);
+    // --- Head --------------------------------------------------------------
+    // Counter the torso lean so the head stays up and locked on the player.
+    this.rotate('neck', 'swing', -lean * 0.75 + swing2 * 0.05 * stride);
+    this.rotate('head', 'swing', -lean * 0.35);
+    this.rotate('head', 'spread', Math.sin(phase * 0.5) * 0.08 * wobble, true);
 
-    // --- Arms -------------------------------------------------------------
+    // Yaw the head toward the player about the body's true up axis.
+    const headRig = this.bones.get('head');
+    if (headRig) {
+      const headTurn = THREE.MathUtils.clamp(state.lookOffset, -0.8, 0.8) * 0.5;
+      _headAxis.copy(_modelUp).applyQuaternion(headRig.bone.getWorldQuaternion(_scratchQuat).invert());
+      _q.setFromAxisAngle(_headAxis.normalize(), headTurn);
+      headRig.bone.quaternion.multiply(_q);
+    }
+
+    // --- Arms --------------------------------------------------------------
     if (state.attackWindup > 0) {
       this.poseAttackWindup(state);
     } else if (state.isAttacking) {
       this.poseAttacking(state);
     } else {
-      this.poseArmsWalking(swing, stride, wobble);
+      this.poseArmsRunning(swing, stride, wobble);
     }
   }
 
-  /** Classic outstretched reach, swaying opposite the legs. */
-  private poseArmsWalking(swing: number, stride: number, wobble: number): void {
-    // Arms come up as the zombie closes in: shambling low, sprinting high.
-    const reach = lerp(-0.55, -1.45, stride);
-    const armSwing = swing * lerp(0.18, 0.5, stride);
+  /**
+   * Running arms.
+   *
+   * The model is T-posed, so the arms start pointing straight out sideways.
+   * A positive swing of ~1.2 rad brings them round to the front - which is
+   * both the classic zombie reach and the base pose the run pumps around.
+   */
+  private poseArmsRunning(swing: number, stride: number, wobble: number): void {
+    // Shamblers hold their arms low and loose; sprinters carry them high.
+    const reach = lerp(0.95, 1.3, stride);
+    const pump = swing * lerp(0.1, 0.5, stride);
 
-    this.rotate('clavicleL', 'z', -0.12);
-    this.rotate('clavicleR', 'z', 0.12);
+    this.rotate('clavicleL', 'lift', 0.08);
+    this.rotate('clavicleR', 'lift', 0.08);
 
-    this.rotate('upperArmL', 'x', reach - armSwing);
-    this.rotate('upperArmR', 'x', reach + armSwing);
-    this.rotate('upperArmL', 'z', 0.26 + Math.sin(swing) * 0.06 * wobble, true);
-    this.rotate('upperArmR', 'z', -0.26 - Math.sin(swing) * 0.06 * wobble, true);
+    // Arms swing in opposition to the legs.
+    this.rotate('upperArmL', 'swing', reach + pump);
+    this.rotate('upperArmR', 'swing', reach - pump);
+    // Raise toward horizontal and tuck slightly inward as the pace rises.
+    this.rotate('upperArmL', 'lift', lerp(-0.25, 0.12, stride) + swing * 0.05 * wobble, true);
+    this.rotate('upperArmR', 'lift', lerp(-0.25, 0.12, stride) - swing * 0.05 * wobble, true);
 
-    // Elbows stay bent; hands hang loose and twitch slightly.
-    this.rotate('forearmL', 'x', -0.75 - Math.max(0, armSwing) * 0.4);
-    this.rotate('forearmR', 'x', -0.75 - Math.max(0, -armSwing) * 0.4);
-    this.rotate('handL', 'x', -0.35);
-    this.rotate('handR', 'x', -0.35);
+    // Elbows stay bent, tightening as the pace picks up.
+    const elbow = lerp(0.35, 0.95, stride);
+    this.rotate('forearmL', 'swing', elbow + Math.max(0, pump) * 0.45);
+    this.rotate('forearmR', 'swing', elbow + Math.max(0, -pump) * 0.45);
+
+    // Hands hang loose, fingers trailing.
+    this.rotate('handL', 'swing', 0.3);
+    this.rotate('handR', 'swing', 0.3);
   }
 
-  /** Arms rear back and up before a swing. */
+  /** Arms rear up and back, coiling before the strike. */
   private poseAttackWindup(state: ZombieAnimationState): void {
     const t = 1 - clamp01(state.attackWindup / Math.max(0.001, state.attackWindupDuration));
-    const raise = Math.sin(t * Math.PI) * 1.6;
+    const raise = Math.sin(t * Math.PI);
 
-    this.rotate('upperArmL', 'x', -1.3 - raise);
-    this.rotate('upperArmR', 'x', -1.3 - raise);
-    this.rotate('upperArmL', 'z', 0.45, true);
-    this.rotate('upperArmR', 'z', -0.45, true);
-    this.rotate('forearmL', 'x', -0.5 - raise * 0.3);
-    this.rotate('forearmR', 'x', -0.5 - raise * 0.3);
-    // Whole body coils backward then snaps forward.
-    this.rotate('spine1', 'x', -raise * 0.18, true);
+    // Swing round to the front, then lift high overhead.
+    this.rotate('upperArmL', 'swing', 1.3 + raise * 0.5);
+    this.rotate('upperArmR', 'swing', 1.3 + raise * 0.5);
+    this.rotate('upperArmL', 'lift', 0.35 + raise * 1.15, true);
+    this.rotate('upperArmR', 'lift', 0.35 + raise * 1.15, true);
+
+    this.rotate('forearmL', 'swing', 0.75 + raise * 0.5);
+    this.rotate('forearmR', 'swing', 0.75 + raise * 0.5);
+    this.rotate('handL', 'swing', 0.5);
+    this.rotate('handR', 'swing', 0.5);
+
+    // The torso coils back with the arms, then whips forward.
+    this.rotate('spine1', 'swing', -raise * 0.22, true);
+    this.rotate('spine2', 'swing', -raise * 0.14, true);
+    this.rotate('neck', 'swing', raise * 0.2, true);
   }
 
-  /** Grabbing at the player at contact range. */
+  /** Clawing at the player at contact range. */
   private poseAttacking(state: ZombieAnimationState): void {
-    const grab = Math.sin(state.elapsed * 9 + state.phaseOffset) * 0.18;
-    this.rotate('upperArmL', 'x', -1.55 + grab);
-    this.rotate('upperArmR', 'x', -1.55 - grab);
-    this.rotate('upperArmL', 'z', 0.34, true);
-    this.rotate('upperArmR', 'z', -0.34, true);
-    this.rotate('forearmL', 'x', -0.5 + grab);
-    this.rotate('forearmR', 'x', -0.5 - grab);
-    this.rotate('handL', 'x', -0.7);
-    this.rotate('handR', 'x', -0.7);
+    const claw = Math.sin(state.elapsed * 11 + state.phaseOffset) * 0.22;
+
+    this.rotate('upperArmL', 'swing', 1.5 + claw);
+    this.rotate('upperArmR', 'swing', 1.5 - claw);
+    this.rotate('upperArmL', 'lift', 0.2 - claw * 0.4, true);
+    this.rotate('upperArmR', 'lift', 0.2 + claw * 0.4, true);
+
+    this.rotate('forearmL', 'swing', 0.85 - claw * 0.5);
+    this.rotate('forearmR', 'swing', 0.85 + claw * 0.5);
+    this.rotate('handL', 'swing', 0.75);
+    this.rotate('handR', 'swing', 0.75);
+
+    this.rotate('spine1', 'swing', 0.18, true);
   }
 
   /** Collapse: knees buckle, spine folds, arms go slack. */
@@ -480,30 +584,30 @@ export class GlbZombieVisual implements ZombieVisual {
     const t = clamp01(state.deathProgress);
     const fold = Math.min(1, t * 1.6);
 
-    this.rotate('thighL', 'x', fold * 0.9);
-    this.rotate('thighR', 'x', fold * 0.7);
-    this.rotate('calfL', 'x', -fold * 1.7);
-    this.rotate('calfR', 'x', -fold * 1.5);
+    this.rotate('thighL', 'swing', fold * 0.8);
+    this.rotate('thighR', 'swing', fold * 0.6);
+    this.rotate('calfL', 'swing', -fold * 1.8);
+    this.rotate('calfR', 'swing', -fold * 1.6);
 
     const pelvis = this.bones.get('pelvis');
     if (pelvis) {
       pelvis.bone.position.y =
-        this.restPelvisY - (fold * 0.35) / Math.max(0.001, this.orient.scale.y);
+        this.restPelvisY - (fold * 0.3) / Math.max(0.001, this.orient.scale.y);
     }
 
-    this.rotate('spine', 'x', fold * 0.5);
-    this.rotate('spine1', 'x', fold * 0.4);
-    this.rotate('spine2', 'x', fold * 0.35);
-    this.rotate('neck', 'x', fold * 0.5);
-    this.rotate('head', 'x', fold * 0.7);
+    this.rotate('spine', 'swing', fold * 0.45);
+    this.rotate('spine1', 'swing', fold * 0.35);
+    this.rotate('spine2', 'swing', fold * 0.3);
+    this.rotate('neck', 'swing', fold * 0.45);
+    this.rotate('head', 'swing', fold * 0.6);
 
-    // Arms fall outward and behind.
-    this.rotate('upperArmL', 'x', fold * 1.1);
-    this.rotate('upperArmR', 'x', fold * 1.0);
-    this.rotate('upperArmL', 'z', fold * 0.7, true);
-    this.rotate('upperArmR', 'z', -fold * 0.7, true);
-    this.rotate('forearmL', 'x', -fold * 0.5);
-    this.rotate('forearmR', 'x', -fold * 0.4);
+    // Arms drop and splay outward.
+    this.rotate('upperArmL', 'swing', fold * 0.4);
+    this.rotate('upperArmR', 'swing', fold * 0.4);
+    this.rotate('upperArmL', 'lift', -fold * 0.9, true);
+    this.rotate('upperArmR', 'lift', -fold * 0.9, true);
+    this.rotate('forearmL', 'swing', fold * 0.5);
+    this.rotate('forearmR', 'swing', fold * 0.5);
   }
 
   // -------------------------------------------------------------------------
