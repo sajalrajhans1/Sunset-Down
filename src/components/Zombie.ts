@@ -1,16 +1,12 @@
 import * as THREE from 'three';
-import {
-  applyZombieType,
-  bodyRadiusFor,
-  createZombieRig,
-  headHeightFor,
-  type ZombieRig,
-} from './ZombieModel';
+import { ProceduralZombieVisual } from './ZombieModel';
+import { GlbZombieVisual, isZombieModelReady } from './GlbZombieVisual';
+import type { ZombieAnimationState, ZombieVisual } from './ZombieVisual';
 import { ZOMBIE_TYPES, type ZombieTypeDef, type ZombieTypeId } from './ZombieTypes';
 import type { NavGrid } from '../systems/NavGrid';
 import type { CollisionWorld } from '../systems/CollisionWorld';
 import { audio } from '../audio/AudioManager';
-import { clamp, clamp01, damp, dampAngle, lerp, randRange, TAU } from '../utilities/MathUtils';
+import { clamp01, damp, dampAngle, lerp, randRange, TAU } from '../utilities/MathUtils';
 import { Easing } from '../utilities/Easing';
 
 export type ZombieState = 'inactive' | 'spawning' | 'chasing' | 'attacking' | 'priming' | 'dying';
@@ -69,7 +65,17 @@ const _toPlayer = new THREE.Vector3();
  * automatically animates slower without any extra code.
  */
 export class Zombie {
-  readonly rig: ZombieRig;
+  /**
+   * Scene node the entity owns. The active visual's root is parented here, so
+   * a pooled zombie can switch between the skinned character and the boss's
+   * procedural rig without touching the scene graph above it.
+   */
+  readonly container = new THREE.Group();
+
+  /** Lazily built, then cached — most pooled entities only ever need one. */
+  private glbVisual: GlbZombieVisual | null = null;
+  private proceduralVisual: ProceduralZombieVisual | null = null;
+  private visual!: ZombieVisual;
 
   state: ZombieState = 'inactive';
   def: ZombieTypeDef = ZOMBIE_TYPES.normal;
@@ -96,7 +102,8 @@ export class Zombie {
   private primeTimer = 0;
   private primeBeepStep = 0;
   private deathSpin = 0;
-  private lodLevel = 0;
+  private lodLevel = -1;
+  private shadowsEnabled = false;
   private idlePhase = 0;
 
   /** Set by the manager each frame so damage numbers can find their anchor. */
@@ -107,9 +114,52 @@ export class Zombie {
   onDeath: ((zombie: Zombie) => void) | null = null;
   onRemoved: ((zombie: Zombie) => void) | null = null;
 
+  private readonly animState: ZombieAnimationState = {
+    dt: 0,
+    elapsed: 0,
+    stride: 0,
+    gaitPhase: 0,
+    attackWindup: 0,
+    attackWindupDuration: 0.34,
+    isAttacking: false,
+    deathProgress: 0,
+    lookOffset: 0,
+    phaseOffset: 0,
+  };
+
   constructor() {
-    this.rig = createZombieRig();
-    this.rig.root.visible = false;
+    this.container.visible = false;
+  }
+
+  /** Body tint, used to colour hit and death particles. */
+  get bodyColor(): number {
+    return this.visual?.bodyColor ?? 0x7d9c6e;
+  }
+
+  /**
+   * Picks the renderable body for a class and parents it under the container.
+   * The boss keeps the stylised primitive rig; everything else uses the
+   * skinned character, falling back to the primitive rig if the model failed
+   * to load so a broken download can never break a wave.
+   */
+  private selectVisual(def: ZombieTypeDef): ZombieVisual {
+    const wantsGlb = !def.isBoss && isZombieModelReady();
+
+    let next: ZombieVisual;
+    if (wantsGlb) {
+      if (!this.glbVisual) this.glbVisual = new GlbZombieVisual();
+      next = this.glbVisual;
+    } else {
+      if (!this.proceduralVisual) this.proceduralVisual = new ProceduralZombieVisual();
+      next = this.proceduralVisual;
+    }
+
+    if (this.visual !== next) {
+      if (this.visual) this.container.remove(this.visual.root);
+      this.container.add(next.root);
+      this.visual = next;
+    }
+    return next;
   }
 
   get isAlive(): boolean {
@@ -132,14 +182,15 @@ export class Zombie {
     const def = ZOMBIE_TYPES[options.type];
     this.def = def;
 
-    applyZombieType(this.rig, def, options.colorIndex);
+    const visual = this.selectVisual(def);
+    visual.applyType(def, options.colorIndex);
 
     this.maxHealth = def.health * options.healthMultiplier;
     this.health = this.maxHealth;
     this.damage = def.damage * options.damageMultiplier;
     this.speed = def.speed * options.speedMultiplier;
-    this.radius = bodyRadiusFor(def);
-    this.headHeight = headHeightFor(def);
+    this.radius = visual.bodyRadius;
+    this.headHeight = visual.headHeight;
     this.slotAngle = options.slotAngle;
 
     this.position.copy(options.position);
@@ -160,15 +211,21 @@ export class Zombie {
     this.idlePhase = Math.random() * TAU;
     this.growlTimer = randRange(0.4, 3.2);
 
-    this.rig.root.visible = true;
-    this.rig.root.position.copy(this.position);
-    this.rig.root.scale.setScalar(0.001);
+    this.animState.phaseOffset = Math.random() * TAU;
+    visual.resetPose();
+    visual.setPrimingGlow(0);
+    visual.setHitFlash(0);
+
+    this.container.visible = true;
+    this.container.position.copy(this.position);
+    this.container.rotation.set(0, this.facing, 0);
+    this.container.scale.setScalar(0.001);
     this.setLodLevel(0, true);
   }
 
   deactivate(): void {
     this.state = 'inactive';
-    this.rig.root.visible = false;
+    this.container.visible = false;
     this.onRemoved?.(this);
   }
 
@@ -279,8 +336,7 @@ export class Zombie {
   private updateSpawning(ctx: ZombieUpdateContext): void {
     this.stateTimer -= ctx.dt;
     const t = clamp01(1 - this.stateTimer / 0.62);
-    const scale = Easing.backOut(t) * this.def.scale;
-    this.rig.root.scale.setScalar(Math.max(0.001, scale));
+    this.container.scale.setScalar(Math.max(0.001, Easing.backOut(t)));
 
     // Face the player as it rises.
     _toPlayer.subVectors(ctx.playerPosition, this.position);
@@ -288,7 +344,7 @@ export class Zombie {
 
     if (this.stateTimer <= 0) {
       this.state = 'chasing';
-      this.rig.root.scale.setScalar(this.def.scale);
+      this.container.scale.setScalar(1);
       audio.sfx.zombieGrowl(this.def.voicePitch, 0.7, this.position);
     }
   }
@@ -424,9 +480,8 @@ export class Zombie {
     // Swell and flash while priming.
     const pulse = 1 + Math.sin(ctx.elapsed * 26) * 0.09 * (1 - this.primeTimer / 1.15);
     const swell = lerp(1, 1.35, clamp01(1 - this.primeTimer / 1.15));
-    this.rig.root.scale.setScalar(this.def.scale * pulse * swell);
-    this.rig.skinMaterial.emissive.setRGB(1, 0.45, 0.15);
-    this.rig.skinMaterial.emissiveIntensity = (1 - this.primeTimer / 1.15) * 1.4;
+    this.container.scale.setScalar(pulse * swell);
+    this.visual.setPrimingGlow(clamp01(1 - this.primeTimer / 1.15));
 
     if (this.primeTimer <= 0) {
       this.health = 0;
@@ -442,15 +497,16 @@ export class Zombie {
     const fall = Easing.quadIn(clamp01(t * 1.5));
     const shrink = t < 0.6 ? 1 : 1 - Easing.cubicIn((t - 0.6) / 0.4);
 
-    this.rig.root.position.set(this.position.x, this.position.y + fall * 0.1, this.position.z);
-    this.rig.root.rotation.set(fall * Math.PI * 0.48, this.facing, this.deathSpin * fall * 0.8);
-    this.rig.root.scale.setScalar(Math.max(0.001, this.def.scale * shrink));
+    this.container.position.set(this.position.x, this.position.y + fall * 0.06, this.position.z);
+    // Topple backward and away, with a little spin.
+    this.container.rotation.set(fall * Math.PI * 0.42, this.facing, this.deathSpin * fall * 0.7);
+    this.container.scale.setScalar(Math.max(0.001, shrink));
 
-    // Legs and arms flail outward as it falls.
-    this.rig.armLeft.rotation.set(-fall * 1.6, 0, -fall * 0.9);
-    this.rig.armRight.rotation.set(-fall * 1.6, 0, fall * 0.9);
-    this.rig.legLeft.rotation.set(fall * 0.9, 0, 0);
-    this.rig.legRight.rotation.set(fall * 0.6, 0, 0);
+    // The skeleton buckles while the whole body falls.
+    this.animState.dt = ctx.dt;
+    this.animState.elapsed = ctx.elapsed;
+    this.animState.deathProgress = t;
+    this.visual.animate(this.animState);
 
     if (this.stateTimer <= 0) this.deactivate();
   }
@@ -471,108 +527,56 @@ export class Zombie {
   }
 
   private applyTransform(): void {
-    this.rig.root.position.copy(this.position);
-    this.rig.root.rotation.set(0, this.facing, 0);
+    this.container.position.copy(this.position);
+    this.container.rotation.set(0, this.facing, 0);
     this.worldCenter.set(this.position.x, this.position.y + this.headHeight * 0.72, this.position.z);
   }
 
   /**
-   * The funny walk. Everything is driven off `gaitPhase`, which advances with
-   * real ground speed so the animation always matches the movement.
+   * Advances the walk cycle and hands the resulting pose to the active visual.
+   *
+   * The entity only computes *numbers* — stride, phase, windup, look angle —
+   * and never touches bones or meshes. That's what lets a skinned glTF body
+   * and the boss's primitive rig be driven by exactly the same gameplay code.
    */
   private animate(ctx: ZombieUpdateContext): void {
-    const { rig, def } = this;
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     const stride = clamp01(speed / Math.max(0.5, this.speed));
 
-    this.gaitPhase += ctx.dt * def.gaitFrequency * (4.2 + stride * 3.4);
+    this.gaitPhase += ctx.dt * this.def.gaitFrequency * (4.2 + stride * 3.4);
 
-    const swing = Math.sin(this.gaitPhase);
-    const swing2 = Math.sin(this.gaitPhase * 2);
-    const amp = 0.55 + stride * 0.55;
-    const wobble = def.gaitWobble;
-
-    // --- Legs: alternating pendulum with a slight knee-less kick ------------
-    rig.legLeft.rotation.x = swing * amp * 0.9;
-    rig.legRight.rotation.x = -swing * amp * 0.9;
-    rig.legLeft.rotation.z = 0.06 * wobble;
-    rig.legRight.rotation.z = -0.06 * wobble;
-
-    // --- Body: bob, sway and lean ------------------------------------------
-    const bobHeight = Math.abs(swing2) * 0.07 * stride * wobble;
-    const idleBreath = Math.sin(this.idlePhase * 2.1) * 0.012;
-    rig.body.position.y = bobHeight + idleBreath;
-    rig.body.rotation.z = -swing * 0.1 * wobble * stride;
-    rig.body.rotation.x = 0.13 + stride * 0.12;
-    rig.body.rotation.y = swing * 0.09 * stride;
-
-    // --- Arms ---------------------------------------------------------------
-    if (this.attackWindup > 0) {
-      // Wind up overhead, then slam down.
-      const w = 1 - clamp01(this.attackWindup / 0.34);
-      const raise = Math.sin(w * Math.PI) * 1.5;
-      rig.armLeft.rotation.x = -1.4 - raise;
-      rig.armRight.rotation.x = -1.4 - raise;
-      rig.armLeft.rotation.z = 0.35;
-      rig.armRight.rotation.z = -0.35;
-      rig.body.rotation.x = 0.13 - raise * 0.18;
-    } else if (this.state === 'attacking') {
-      // Reaching forward, hands grabbing.
-      const grab = Math.sin(ctx.elapsed * 9 + this.idlePhase) * 0.16;
-      rig.armLeft.rotation.x = -1.5 + grab;
-      rig.armRight.rotation.x = -1.5 - grab;
-      rig.armLeft.rotation.z = 0.28;
-      rig.armRight.rotation.z = -0.28;
-    } else {
-      // Classic outstretched zombie arms, swaying opposite to the legs.
-      const reach = lerp(-0.55, -1.35, stride);
-      rig.armLeft.rotation.x = reach - swing * 0.42 * amp;
-      rig.armRight.rotation.x = reach + swing * 0.42 * amp;
-      rig.armLeft.rotation.z = 0.2 + swing * 0.12 * wobble;
-      rig.armRight.rotation.z = -0.2 + swing * 0.12 * wobble;
-    }
-
-    // --- Head: lags the body, bobbles, and locks onto the player ------------
-    const headBob = Math.sin(this.gaitPhase * 2 + 0.7) * 0.13 * stride * wobble;
-    rig.head.rotation.z = -rig.body.rotation.z * 1.4 + headBob * 0.4;
-    rig.head.rotation.x = -rig.body.rotation.x * 0.75 + headBob * 0.35;
-    rig.head.rotation.y = -swing * 0.14 * stride;
-
-    // Pupils track the player: a tiny detail that makes them feel alive.
-    const toPlayerLocal = Math.atan2(
+    // Signed yaw from where the body faces to where the player actually is.
+    const toPlayerAngle = Math.atan2(
       ctx.playerPosition.x - this.position.x,
       ctx.playerPosition.z - this.position.z,
     );
-    let lookOffset = toPlayerLocal - this.facing;
+    let lookOffset = toPlayerAngle - this.facing;
     lookOffset = ((lookOffset + Math.PI) % TAU + TAU) % TAU - Math.PI;
-    rig.pupils.position.x = clamp(lookOffset, -0.7, 0.7) * 0.045;
-    rig.pupils.position.y = Math.sin(this.idlePhase * 1.3) * 0.006;
 
-    // Blink: pupils squash briefly at random intervals.
-    const blink = Math.sin(this.idlePhase * 0.9 + this.slotAngle);
-    if (blink > 0.995) {
-      rig.eyes.scale.y = def.proportions.eye * 0.25;
-    } else {
-      rig.eyes.scale.y = def.proportions.eye;
-    }
+    const state = this.animState;
+    state.dt = ctx.dt;
+    state.elapsed = ctx.elapsed;
+    state.stride = stride;
+    state.gaitPhase = this.gaitPhase;
+    state.attackWindup = this.attackWindup;
+    state.attackWindupDuration = lerp(0.34, 0.18, clamp01(ctx.aggression));
+    state.isAttacking = this.state === 'attacking';
+    state.deathProgress = 0;
+    state.lookOffset = lookOffset;
+
+    this.visual.animate(state);
   }
 
-  /** White flash on hit, tinted toward the class accent. */
+  /** White flash on hit. */
   private applyHitFlash(): void {
     if (this.state === 'priming') return;
-    const flash = this.hitFlash * this.hitFlash;
-    if (flash > 0.001) {
-      this.rig.skinMaterial.emissive.setRGB(flash, flash * 0.85, flash * 0.7);
-      this.rig.skinMaterial.emissiveIntensity = 1;
-    } else if (this.rig.skinMaterial.emissiveIntensity !== 0) {
-      this.rig.skinMaterial.emissive.setRGB(0, 0, 0);
-      this.rig.skinMaterial.emissiveIntensity = 0;
-    }
+    this.visual.setHitFlash(this.hitFlash);
   }
 
   /**
-   * Distance-based detail reduction. Eyes, brows and shadow casting are the
-   * first things to go — none of them are legible past ~25 m anyway.
+   * Distance-based detail reduction. For the skinned character this throttles
+   * how often the 114-bone skeleton is re-posed, which is by far the largest
+   * per-zombie CPU cost.
    */
   private updateLod(ctx: ZombieUpdateContext): void {
     const distance = ctx.cameraDistance;
@@ -581,35 +585,21 @@ export class Zombie {
   }
 
   private setLodLevel(level: number, force: boolean, allowShadows = true): void {
-    if (level === this.lodLevel && !force) {
-      // Shadow budget can change without the LOD level changing.
-      const wantShadow = level === 0 && allowShadows;
-      if (this.rig.torso.castShadow !== wantShadow) this.applyShadowFlag(wantShadow);
-      return;
+    const wantShadow = level === 0 && allowShadows;
+    if (level !== this.lodLevel || force) {
+      this.lodLevel = level;
+      this.visual.setLod(level);
     }
-    this.lodLevel = level;
-
-    const showDetail = level === 0;
-    for (const mesh of this.rig.detailMeshes) {
-      // The accessory stays visible at mid range — it's a class read.
-      if (mesh === this.rig.accessory) continue;
-      mesh.visible = showDetail || level === 1;
+    if (wantShadow !== this.shadowsEnabled || force) {
+      this.shadowsEnabled = wantShadow;
+      this.visual.setShadowsEnabled(wantShadow);
     }
-    this.rig.brow.visible = showDetail;
-    this.applyShadowFlag(level === 0 && allowShadows);
-  }
-
-  private applyShadowFlag(enabled: boolean): void {
-    this.rig.torso.castShadow = enabled;
-    this.rig.skull.castShadow = enabled;
-    (this.rig.armLeft.children[0] as THREE.Mesh).castShadow = enabled;
-    (this.rig.armRight.children[0] as THREE.Mesh).castShadow = enabled;
-    (this.rig.legLeft.children[0] as THREE.Mesh).castShadow = enabled;
-    (this.rig.legRight.children[0] as THREE.Mesh).castShadow = enabled;
   }
 
   dispose(): void {
-    this.rig.skinMaterial.dispose();
-    this.rig.accentMaterial.dispose();
+    this.glbVisual?.dispose();
+    this.proceduralVisual?.dispose();
+    this.glbVisual = null;
+    this.proceduralVisual = null;
   }
 }

@@ -6,6 +6,7 @@ import { settings, detectRecommendedPreset, type QualityProfile } from './Settin
 
 import { Player } from '../components/Player';
 import type { Zombie } from '../components/Zombie';
+import { loadZombieModel } from '../components/GlbZombieVisual';
 
 import { Village } from '../scenes/Village';
 
@@ -140,7 +141,19 @@ export class Game {
     this.scene.add(this.village.group);
     await this.yieldFrame();
 
-    this.ui.setLoadingProgress(0.62, 'Waking the neighbours');
+    this.ui.setLoadingProgress(0.58, 'Waking the neighbours');
+    // The skinned zombie has to be decoded before any wave can spawn, so it is
+    // awaited here rather than streamed in behind gameplay.
+    try {
+      await loadZombieModel();
+    } catch (error) {
+      // A failed model download must not block the game: every class falls
+      // back to the original procedural rig automatically.
+      console.warn('[Sunset Hollow] Zombie model failed to load, using fallback bodies:', error);
+    }
+    await this.yieldFrame();
+
+    this.ui.setLoadingProgress(0.7, 'Rousing the dead');
     this.zombies = new ZombieManager(quality.maxZombies);
     this.scene.add(this.zombies.group);
     await this.yieldFrame();
@@ -557,7 +570,7 @@ export class Game {
     });
 
     this._tmpVec.set(zombie.position.x, zombie.position.y + zombie.headHeight * 0.8, zombie.position.z);
-    this.particles.zombiePoof(this._tmpVec, zombie.rig.skinMaterial.color.getHex(), zombie.def.scale);
+    this.particles.zombiePoof(this._tmpVec, zombie.bodyColor, zombie.def.scale);
     this.particles.coinSparkle(this._tmpVec);
     audio.sfx.coinPickup(result.pitchStep);
 

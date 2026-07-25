@@ -66,6 +66,12 @@ async function boot(): Promise<void> {
     return;
   }
 
+  // Dev-only handle for inspecting live game state from the console.
+  // Stripped from production builds by the bundler's dead-code elimination.
+  if (import.meta.env.DEV) {
+    (window as unknown as { game: Game }).game = game;
+  }
+
   // Release GPU resources cleanly on navigation away.
   window.addEventListener('pagehide', () => game.dispose(), { once: true });
 

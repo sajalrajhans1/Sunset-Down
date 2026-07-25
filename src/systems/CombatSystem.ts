@@ -158,7 +158,7 @@ export class CombatSystem {
         this.particles.zombieHit(
           zombieHit.point,
           direction.clone().negate(),
-          zombieHit.zombie.rig.skinMaterial.color.getHex(),
+          zombieHit.zombie.bodyColor,
           critical || result.headshot,
         );
 

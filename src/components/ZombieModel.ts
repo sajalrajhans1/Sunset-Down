@@ -4,6 +4,7 @@ import { toonRampTexture } from '../textures/ProceduralTextures';
 import { zombieSkin } from '../textures/ZombieSkin';
 import { applyStylizedShading } from '../textures/StylizedMaterial';
 import type { ZombieTypeDef } from './ZombieTypes';
+import type { ZombieAnimationState, ZombieVisual } from './ZombieVisual';
 
 /**
  * Procedural zombie rig.
@@ -364,6 +365,143 @@ export function headHeightFor(def: ZombieTypeDef): number {
 /** Approximate body radius for collision and hit detection. */
 export function bodyRadiusFor(def: ZombieTypeDef): number {
   return 0.36 * def.proportions.bodyWidth * def.scale;
+}
+
+/**
+ * The original primitive-based rig, wrapped behind the shared visual
+ * interface. Still used by the boss, which keeps its stylised look while every
+ * other class uses the skinned glTF character.
+ */
+export class ProceduralZombieVisual implements ZombieVisual {
+  readonly rig: ZombieRig;
+  readonly root: THREE.Object3D;
+
+  bodyColor = 0x8fce8a;
+  headHeight = 1.4;
+  bodyRadius = 0.36;
+
+  private def: ZombieTypeDef | null = null;
+  private lod = -1;
+
+  constructor() {
+    this.rig = createZombieRig();
+    this.root = this.rig.root;
+    this.root.visible = true;
+  }
+
+  applyType(def: ZombieTypeDef, colorIndex: number): void {
+    this.def = def;
+    applyZombieType(this.rig, def, colorIndex);
+    this.bodyColor = def.colors[colorIndex % def.colors.length];
+    this.headHeight = headHeightFor(def);
+    this.bodyRadius = bodyRadiusFor(def);
+    // The entity owns the root's scale for spawn/death, so the rig's own
+    // per-class scale is folded into the body node instead.
+    this.rig.root.scale.setScalar(1);
+    this.rig.body.scale.setScalar(def.scale);
+  }
+
+  resetPose(): void {
+    this.rig.body.position.set(0, 0, 0);
+    this.rig.body.rotation.set(0, 0, 0);
+  }
+
+  animate(state: ZombieAnimationState): void {
+    const { rig } = this;
+    const def = this.def;
+    if (!def) return;
+
+    const stride = state.stride;
+    const phase = state.gaitPhase + state.phaseOffset;
+    const swing = Math.sin(phase);
+    const swing2 = Math.sin(phase * 2);
+    const amp = 0.55 + stride * 0.55;
+    const wobble = def.gaitWobble;
+
+    if (state.deathProgress > 0) {
+      const fall = Math.min(1, state.deathProgress * 1.5);
+      rig.armLeft.rotation.set(-fall * 1.6, 0, -fall * 0.9);
+      rig.armRight.rotation.set(-fall * 1.6, 0, fall * 0.9);
+      rig.legLeft.rotation.set(fall * 0.9, 0, 0);
+      rig.legRight.rotation.set(fall * 0.6, 0, 0);
+      return;
+    }
+
+    rig.legLeft.rotation.x = swing * amp * 0.9;
+    rig.legRight.rotation.x = -swing * amp * 0.9;
+    rig.legLeft.rotation.z = 0.06 * wobble;
+    rig.legRight.rotation.z = -0.06 * wobble;
+
+    rig.body.position.y = Math.abs(swing2) * 0.07 * stride * wobble;
+    rig.body.rotation.z = -swing * 0.1 * wobble * stride;
+    rig.body.rotation.x = 0.13 + stride * 0.12;
+    rig.body.rotation.y = swing * 0.09 * stride;
+
+    if (state.attackWindup > 0) {
+      const w = 1 - Math.max(0, state.attackWindup / Math.max(0.001, state.attackWindupDuration));
+      const raise = Math.sin(w * Math.PI) * 1.5;
+      rig.armLeft.rotation.set(-1.4 - raise, 0, 0.35);
+      rig.armRight.rotation.set(-1.4 - raise, 0, -0.35);
+      rig.body.rotation.x = 0.13 - raise * 0.18;
+    } else if (state.isAttacking) {
+      const grab = Math.sin(state.elapsed * 9 + state.phaseOffset) * 0.16;
+      rig.armLeft.rotation.set(-1.5 + grab, 0, 0.28);
+      rig.armRight.rotation.set(-1.5 - grab, 0, -0.28);
+    } else {
+      const reach = -0.55 + (-1.35 + 0.55) * stride;
+      rig.armLeft.rotation.set(reach - swing * 0.42 * amp, 0, 0.2 + swing * 0.12 * wobble);
+      rig.armRight.rotation.set(reach + swing * 0.42 * amp, 0, -0.2 + swing * 0.12 * wobble);
+    }
+
+    const headBob = Math.sin(phase * 2 + 0.7) * 0.13 * stride * wobble;
+    rig.head.rotation.z = -rig.body.rotation.z * 1.4 + headBob * 0.4;
+    rig.head.rotation.x = -rig.body.rotation.x * 0.75 + headBob * 0.35;
+    rig.head.rotation.y = -swing * 0.14 * stride;
+
+    rig.pupils.position.x = Math.max(-0.7, Math.min(0.7, state.lookOffset)) * 0.045;
+  }
+
+  setHitFlash(amount: number): void {
+    const flash = amount * amount;
+    if (flash > 0.001) {
+      this.rig.skinMaterial.emissive.setRGB(flash, flash * 0.85, flash * 0.7);
+      this.rig.skinMaterial.emissiveIntensity = 1;
+    } else if (this.rig.skinMaterial.emissiveIntensity !== 0) {
+      this.rig.skinMaterial.emissive.setRGB(0, 0, 0);
+      this.rig.skinMaterial.emissiveIntensity = 0;
+    }
+  }
+
+  setPrimingGlow(amount: number): void {
+    if (amount <= 0.001) return;
+    this.rig.skinMaterial.emissive.setRGB(1, 0.45, 0.15);
+    this.rig.skinMaterial.emissiveIntensity = amount * 1.4;
+  }
+
+  setShadowsEnabled(enabled: boolean): void {
+    this.rig.torso.castShadow = enabled;
+    this.rig.skull.castShadow = enabled;
+    (this.rig.armLeft.children[0] as THREE.Mesh).castShadow = enabled;
+    (this.rig.armRight.children[0] as THREE.Mesh).castShadow = enabled;
+    (this.rig.legLeft.children[0] as THREE.Mesh).castShadow = enabled;
+    (this.rig.legRight.children[0] as THREE.Mesh).castShadow = enabled;
+  }
+
+  setLod(level: number): void {
+    if (level === this.lod) return;
+    this.lod = level;
+    for (const mesh of this.rig.detailMeshes) {
+      if (mesh === this.rig.accessory) continue;
+      mesh.visible = level <= 1;
+    }
+    this.rig.brow.visible = level === 0;
+  }
+
+  dispose(): void {
+    this.rig.skinMaterial.dispose();
+    this.rig.accentMaterial.dispose();
+    this.rig.accessoryMaterial.dispose();
+  }
 }
 
 export function disposeSharedZombieAssets(): void {

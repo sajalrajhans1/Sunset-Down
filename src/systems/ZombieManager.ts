@@ -63,7 +63,7 @@ export class ZombieManager {
       initialSize: Math.min(capacity, 16),
       factory: () => {
         const zombie = new Zombie();
-        this.group.add(zombie.rig.root);
+        this.group.add(zombie.container);
         zombie.onAttack = (z, damage) => this.onZombieAttack?.(z, damage);
         zombie.onDeath = (z) => this.onZombieKilled?.(z);
         zombie.onExplode = (z) => this.onZombieExploded?.(z);
@@ -395,7 +395,7 @@ export class ZombieManager {
   dispose(): void {
     for (const zombie of this.pool.drain()) {
       zombie.dispose();
-      this.group.remove(zombie.rig.root);
+      this.group.remove(zombie.container);
     }
     this.active.length = 0;
     this.grid.clear();
