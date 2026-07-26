@@ -23,6 +23,7 @@ import {
 } from './PropFactory';
 import { SkySystem } from './SkySystem';
 import { Environment } from './Environment';
+import { TreeField, areTreesReady, type TreePlacement } from './TreeModels';
 import { CollisionWorld } from '../systems/CollisionWorld';
 import { NavGrid } from '../systems/NavGrid';
 import { WORLD } from '../game/Config';
@@ -45,6 +46,11 @@ export class Village {
   readonly navGrid = new NavGrid();
   readonly sky: SkySystem;
   readonly environment = new Environment();
+  /** Instanced foliage. Replaces the old batched primitive trees. */
+  readonly trees = new TreeField();
+
+  private readonly treePlacements: TreePlacement[] = [];
+  private readonly rockPlacements: TreePlacement[] = [];
 
   /** Perimeter positions where waves stream in from. */
   readonly spawnPoints: THREE.Vector3[] = [];
@@ -68,6 +74,7 @@ export class Village {
     this.group.add(this.sky.group);
     this.group.add(this.dynamicProps);
     this.group.add(this.environment.group);
+    this.group.add(this.trees.group);
   }
 
   // -------------------------------------------------------------------------
@@ -103,12 +110,36 @@ export class Village {
       this.group.add(mesh);
     }
 
+    this.trees.build(this.treePlacements, this.rockPlacements);
+
     this.collision.build();
     this.navGrid.bake(this.collision, 0.62);
     this.generateSpawnPoints();
 
     this.setupLighting(scene, lightRequests, quality);
     this.environment.build(quality, this.collision, PLAZA_RADIUS);
+  }
+
+  /**
+   * Queues a tree for the instanced field and registers its trunk collider.
+   *
+   * Falls back to the original procedural tree when the model pack is missing,
+   * so a failed download costs detail rather than the whole treeline.
+   */
+  private placeTree(ctx: BuildContext, x: number, z: number, scale: number, foliage: MaterialKey): void {
+    if (!areTreesReady()) {
+      buildTree(ctx, x, z, scale, foliage);
+      return;
+    }
+    this.treePlacements.push({ x, z, scale, rotation: ctx.rand() * TAU });
+    this.collision.addCylinder({
+      x,
+      z,
+      radius: 0.32 * scale,
+      baseY: 0,
+      height: 3.2 * scale,
+      impactColor: 0x6b4630,
+    });
   }
 
   /** Ground planes: grass field, cobbled plaza, and radiating dirt streets. */
@@ -309,7 +340,7 @@ export class Village {
       if (z < -22 && Math.abs(x) < 34) continue;
       if (x > 30 && Math.abs(z) < 22) continue;
       if (this.collision.isBlocked(x, z, 3.2, 1)) continue;
-      buildTree(ctx, x, z, 0.85 + rand() * 0.75, foliage[(rand() * foliage.length) | 0]);
+      this.placeTree(ctx, x, z, 0.85 + rand() * 0.75, foliage[(rand() * foliage.length) | 0]);
     }
 
     for (let i = 0; i < 34; i++) {
@@ -319,6 +350,18 @@ export class Village {
       const z = Math.sin(angle) * radius;
       if (this.collision.isBlocked(x, z, 1.4, 0.5)) continue;
       buildBush(ctx, x, z, 0.7 + rand() * 0.6, foliage[(rand() * foliage.length) | 0]);
+    }
+
+    // Scattered rocks break up the open grass.
+    if (areTreesReady()) {
+      for (let i = 0; i < 26; i++) {
+        const angle = rand() * TAU;
+        const radius = 24 + rand() * 32;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        if (this.collision.isBlocked(x, z, 1.2, 0.4)) continue;
+        this.rockPlacements.push({ x, z, scale: 0.5 + rand() * 0.9, rotation: rand() * TAU });
+      }
     }
 
     // A fenced garden south of the square.
@@ -350,7 +393,7 @@ export class Village {
       ] as [number, number][]) {
         const jx = x + (rand() - 0.5) * 2.4;
         const jz = z + (rand() - 0.5) * 2.4;
-        buildTree(ctx, jx, jz, 1.1 + rand() * 0.6, foliage[(rand() * foliage.length) | 0]);
+        this.placeTree(ctx, jx, jz, 1.1 + rand() * 0.6, foliage[(rand() * foliage.length) | 0]);
       }
     }
 
@@ -613,6 +656,7 @@ export class Village {
     });
     this.dynamicProps.clear();
     this.environment.dispose();
+    this.trees.dispose();
     this.sky.dispose();
     this.collision.clear();
     this.group.clear();

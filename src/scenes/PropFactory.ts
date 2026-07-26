@@ -838,16 +838,44 @@ export function buildCarousel(ctx: BuildContext, x: number, z: number, radius: n
   finial.position.y = 4.9;
   spinner.add(finial);
 
-  // Horses on brass poles.
+  // --- Carousel horses ----------------------------------------------------
+  // Sculpted rather than boxed: an arched neck, tapered muzzle, flowing mane
+  // and tail, a saddle and gold stirrups. These are the closest prop to the
+  // player in the plaza, so they carry a lot of the fairground's charm.
   const horseCount = 6;
-  const poleGeometry = new THREE.CylinderGeometry(0.055, 0.055, 3.1, 8);
-  const bodyGeometry = new THREE.BoxGeometry(0.85, 0.5, 0.32);
-  const headGeometry = new THREE.BoxGeometry(0.34, 0.42, 0.26);
-  const legGeometry = new THREE.BoxGeometry(0.12, 0.55, 0.12);
-  const horseMaterials: THREE.Material[] = [
+  const poleGeometry = new THREE.CylinderGeometry(0.05, 0.05, 3.1, 10);
+
+  const bodyGeometry = new THREE.CapsuleGeometry(0.26, 0.5, 5, 12);
+  bodyGeometry.rotateZ(Math.PI * 0.5);
+  bodyGeometry.scale(1, 0.92, 0.78);
+
+  const chestGeometry = new THREE.SphereGeometry(0.27, 12, 10);
+  chestGeometry.scale(0.85, 0.95, 0.8);
+
+  const neckGeometry = new THREE.CylinderGeometry(0.13, 0.19, 0.46, 10);
+  const headGeometry = new THREE.CapsuleGeometry(0.1, 0.2, 4, 10);
+  const muzzleGeometry = new THREE.SphereGeometry(0.085, 10, 8);
+  const earGeometry = new THREE.ConeGeometry(0.035, 0.1, 6);
+
+  // Upper leg tapers into a slimmer lower leg, with a hoof at the bottom.
+  const upperLegGeometry = new THREE.CapsuleGeometry(0.062, 0.24, 4, 8);
+  const lowerLegGeometry = new THREE.CapsuleGeometry(0.042, 0.22, 4, 8);
+  const hoofGeometry = new THREE.CylinderGeometry(0.055, 0.048, 0.07, 8);
+
+  const maneGeometry = new THREE.CapsuleGeometry(0.055, 0.34, 4, 8);
+  const tailGeometry = new THREE.CapsuleGeometry(0.07, 0.38, 4, 8);
+  const saddleGeometry = new THREE.SphereGeometry(0.2, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  const stirrupGeometry = new THREE.TorusGeometry(0.045, 0.012, 6, 12);
+
+  const coatMaterials: THREE.Material[] = [
     materials.get('paint.white'),
     materials.get('flower.pink'),
     materials.get('plaster.butter'),
+  ];
+  const maneMaterials: THREE.Material[] = [
+    materials.get('metal.gold'),
+    materials.get('canvas.red'),
+    materials.get('plaster.lilac'),
   ];
 
   for (let i = 0; i < horseCount; i++) {
@@ -861,28 +889,103 @@ export function buildCarousel(ctx: BuildContext, x: number, z: number, radius: n
 
     const horse = new THREE.Group();
     horse.position.set(hx, 1.35, hz);
+    // Face along the direction of travel.
     horse.rotation.y = -a + Math.PI * 0.5;
-    const mat = horseMaterials[i % horseMaterials.length];
 
-    const body = new THREE.Mesh(bodyGeometry, mat);
+    const coat = coatMaterials[i % coatMaterials.length];
+    const mane = maneMaterials[i % maneMaterials.length];
+
+    const body = new THREE.Mesh(bodyGeometry, coat);
     body.castShadow = true;
     horse.add(body);
 
-    const head = new THREE.Mesh(headGeometry, mat);
-    head.position.set(0.5, 0.3, 0);
-    head.rotation.z = -0.35;
+    const chest = new THREE.Mesh(chestGeometry, coat);
+    chest.position.set(0.3, 0.05, 0);
+    horse.add(chest);
+
+    // Neck arches up and forward from the chest.
+    const neck = new THREE.Mesh(neckGeometry, coat);
+    neck.position.set(0.44, 0.29, 0);
+    neck.rotation.z = -0.72;
+    neck.castShadow = true;
+    horse.add(neck);
+
+    const head = new THREE.Mesh(headGeometry, coat);
+    head.position.set(0.63, 0.46, 0);
+    head.rotation.z = -1.15;
     horse.add(head);
 
-    for (const [lx, lz] of [
-      [0.3, 0.12],
-      [0.3, -0.12],
-      [-0.3, 0.12],
-      [-0.3, -0.12],
-    ]) {
-      const leg = new THREE.Mesh(legGeometry, mat);
-      leg.position.set(lx, -0.42, lz);
-      leg.rotation.x = lx > 0 ? 0.3 : -0.3;
-      horse.add(leg);
+    const muzzle = new THREE.Mesh(muzzleGeometry, coat);
+    muzzle.position.set(0.78, 0.42, 0);
+    muzzle.scale.set(1, 0.8, 0.85);
+    horse.add(muzzle);
+
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(earGeometry, coat);
+      ear.position.set(0.55, 0.6, side * 0.06);
+      ear.rotation.z = -0.3;
+      horse.add(ear);
+    }
+
+    // Flowing mane down the neck.
+    for (let m = 0; m < 4; m++) {
+      const strand = new THREE.Mesh(maneGeometry, mane);
+      strand.position.set(0.4 + m * 0.06, 0.5 - m * 0.03, 0);
+      strand.rotation.z = -0.9 - m * 0.12;
+      strand.scale.setScalar(1 - m * 0.12);
+      horse.add(strand);
+    }
+
+    const tail = new THREE.Mesh(tailGeometry, mane);
+    tail.position.set(-0.42, 0.16, 0);
+    tail.rotation.z = 0.95;
+    tail.castShadow = true;
+    horse.add(tail);
+
+    // Saddle and stirrups.
+    const saddle = new THREE.Mesh(saddleGeometry, materials.get('canvas.red'));
+    saddle.position.set(0.02, 0.2, 0);
+    saddle.scale.set(1, 0.7, 0.95);
+    horse.add(saddle);
+
+    for (const side of [-1, 1]) {
+      const stirrup = new THREE.Mesh(stirrupGeometry, materials.get('metal.gold'));
+      stirrup.position.set(0.02, 0.02, side * 0.2);
+      stirrup.rotation.y = Math.PI * 0.5;
+      horse.add(stirrup);
+    }
+
+    // Legs: front pair reaching forward, rear pair kicking back, as a
+    // carousel horse is always frozen mid-gallop.
+    const legPlan: [number, number, number, number][] = [
+      [0.24, 0.2, -0.75, 1],
+      [0.24, -0.2, -0.75, 1],
+      [-0.26, 0.2, 0.8, -1],
+      [-0.26, -0.2, 0.8, -1],
+    ];
+    for (const [lx, lz, swing, dir] of legPlan) {
+      const hip = new THREE.Group();
+      hip.position.set(lx, -0.12, lz);
+      hip.rotation.z = swing;
+      horse.add(hip);
+
+      const upper = new THREE.Mesh(upperLegGeometry, coat);
+      upper.position.y = -0.13;
+      upper.castShadow = true;
+      hip.add(upper);
+
+      const knee = new THREE.Group();
+      knee.position.y = -0.26;
+      knee.rotation.z = -swing * 0.55 * dir;
+      hip.add(knee);
+
+      const lower = new THREE.Mesh(lowerLegGeometry, coat);
+      lower.position.y = -0.12;
+      knee.add(lower);
+
+      const hoof = new THREE.Mesh(hoofGeometry, materials.get('metal.gold'));
+      hoof.position.y = -0.25;
+      knee.add(hoof);
     }
 
     // Bob offset so the horses rise and fall out of phase.

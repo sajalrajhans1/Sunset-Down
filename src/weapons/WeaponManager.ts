@@ -4,6 +4,7 @@ import { WEAPON_ORDER, type WeaponId } from './WeaponDefs';
 import { audio } from '../audio/AudioManager';
 import { clamp01, damp, lerp, randRange, TAU } from '../utilities/MathUtils';
 import type { CollisionWorld } from '../systems/CollisionWorld';
+import { FirstPersonHands, areHandsReady } from './FirstPersonHands';
 
 /**
  * Owns the player's arsenal and the first-person viewmodel rig.
@@ -51,6 +52,11 @@ export class WeaponManager {
   private readonly flashLight: THREE.PointLight;
   private flashTimer = 0;
   private flashDuration = 0.055;
+
+  /** Arms holding the weapon. Null when the model failed to load. */
+  private hands: FirstPersonHands | null = null;
+  /** Rises on each shot so the trigger finger squeezes. */
+  private triggerImpulse = 0;
 
   private readonly _rayOrigin = new THREE.Vector3();
   private readonly _rayDir = new THREE.Vector3();
@@ -124,6 +130,21 @@ export class WeaponManager {
 
     this.flashLight = new THREE.PointLight(0xffc070, 0, 14, 2);
     this.flashLight.castShadow = false;
+
+  }
+
+  /**
+   * Builds the hands once their model has loaded.
+   *
+   * Deliberately not done in the constructor: the manager is created with the
+   * Game object, long before any asset finishes downloading. They're parented
+   * under the ADS node so they inherit the same sway, bob and aim blend as the
+   * weapon and stay locked to it.
+   */
+  attachHands(): void {
+    if (this.hands || !areHandsReady()) return;
+    this.hands = new FirstPersonHands();
+    this.adsNode.add(this.hands.root);
   }
 
   // -------------------------------------------------------------------------
@@ -292,6 +313,7 @@ export class WeaponManager {
 
   /** Fires the muzzle flash. Called by the combat system on a successful shot. */
   triggerMuzzleFlash(intensity = 1): void {
+    this.triggerImpulse = 1;
     this.flashTimer = this.flashDuration;
     this.flashMesh.visible = true;
     // Random roll + shader seed so consecutive shots never repeat a shape.
@@ -403,6 +425,18 @@ export class WeaponManager {
     weapon.model.root.rotation.x += weapon.kickRotation.x;
     weapon.model.root.rotation.z += weapon.kickRotation.z;
 
+    // --- Hands -------------------------------------------------------------
+    // Must run after the weapon's recoil and reload animation, since the IK
+    // targets are anchors parented to the moving weapon parts.
+    this.triggerImpulse = Math.max(0, this.triggerImpulse - dt * 7);
+    if (this.hands) {
+      weapon.model.root.updateWorldMatrix(true, true);
+      this.hands.update(weapon.model, dt, this.triggerImpulse, this.lowerAmount);
+      // Hide the hands during a reload swing: the arms would have to leave the
+      // weapon entirely, and faking that badly is worse than not showing it.
+      this.hands.setVisible(!weapon.isReloading);
+    }
+
     // --- Muzzle flash decay ------------------------------------------------
     if (this.flashTimer > 0) {
       this.flashTimer -= dt;
@@ -427,6 +461,7 @@ export class WeaponManager {
   dispose(): void {
     for (const weapon of this.owned.values()) weapon.dispose();
     this.owned.clear();
+    this.hands?.dispose();
     this.flashMaterial.dispose();
     this.flashMesh.geometry.dispose();
     this.rigRoot.clear();
