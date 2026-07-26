@@ -1591,6 +1591,71 @@ body {
   animation-duration: 1.35s;
 }
 
+/*
+ * Threat cue: a zombie closing in from outside your view.
+ *
+ * Deliberately amber and thinner than the red damage arc, and it only ever
+ * appears for contacts *behind* the camera — so the two never compete and each
+ * one means something specific. Amber = "about to be hit from there",
+ * red = "was just hit from there".
+ */
+.sh-threat {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s linear;
+  will-change: transform;
+}
+
+.sh-threat.is-active {
+  visibility: visible;
+}
+
+.sh-threat::before {
+  content: '';
+  position: absolute;
+  width: 132px;
+  height: 26px;
+  /* Sits a little further out than the damage arc so they never overlap. */
+  transform: translate(-50%, -50%) translateY(-32vh);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse 50% 100% at 50% 100%,
+    rgba(255, 190, 70, 0.85) 0%,
+    rgba(255, 170, 60, 0.35) 45%,
+    rgba(255, 170, 60, 0) 75%
+  );
+  filter: blur(1px) drop-shadow(0 0 12px rgba(255, 170, 60, 0.7));
+}
+
+/* Within swinging distance: turns hot and pulses urgently. */
+.sh-threat.is-imminent::before {
+  width: 168px;
+  height: 32px;
+  background: radial-gradient(
+    ellipse 50% 100% at 50% 100%,
+    rgba(255, 120, 50, 0.95) 0%,
+    rgba(255, 90, 50, 0.45) 45%,
+    rgba(255, 90, 50, 0) 75%
+  );
+  filter: blur(1px) drop-shadow(0 0 18px rgba(255, 110, 50, 0.9));
+  animation: sh-threat-pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes sh-threat-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+:root[data-reduced-motion='true'] .sh-threat.is-imminent::before {
+  animation: none;
+}
+
 /* --- Boss bar --- */
 .sh-bossbar {
   position: absolute;

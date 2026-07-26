@@ -40,6 +40,22 @@ interface DamageArrow {
   worldDirection: THREE.Vector2;
 }
 
+/** A zombie closing in from outside the player's view. */
+export interface ThreatCue {
+  /** Normalised world-space direction from the player to the zombie. */
+  x: number;
+  z: number;
+  /** 0..1, rising as it gets closer. */
+  intensity: number;
+  /** True once it is within swinging distance. */
+  imminent: boolean;
+}
+
+interface ThreatSlot {
+  node: HTMLElement;
+  active: boolean;
+}
+
 /**
  * The in-game heads-up display.
  *
@@ -113,6 +129,9 @@ export class HUD {
 
   private readonly killEntries: KillFeedEntry[] = [];
   private readonly damageArrows: DamageArrow[] = [];
+  /** Fixed pool: threat cues update every frame, so nothing is allocated. */
+  private readonly threatSlots: ThreatSlot[] = [];
+  private static readonly MAX_THREATS = 4;
   private hitMarkerTimer = 0;
   private bannerTimer = 0;
 
@@ -244,6 +263,13 @@ export class HUD {
     // --- Kill feed, damage arrows, boss bar ---
     this.killFeed = el('div', { className: 'sh-killfeed', attrs: { 'aria-hidden': 'true' } });
     this.damageRing = el('div', { className: 'sh-damage-ring', attrs: { 'aria-hidden': 'true' } });
+
+    // Pre-built threat cues, shown and hidden rather than created per frame.
+    for (let i = 0; i < HUD.MAX_THREATS; i++) {
+      const node = el('div', { className: 'sh-threat' });
+      this.damageRing.appendChild(node);
+      this.threatSlots.push({ node, active: false });
+    }
 
     this.bossName = el('div', { className: 'sh-bossbar__name', text: 'Boss' });
     this.bossFill = el('div', { className: 'sh-bossbar__fill' });
@@ -616,6 +642,40 @@ export class HUD {
     }
   }
 
+  /**
+   * Shows where zombies are closing in from, before they land a hit.
+   *
+   * Uses the same bearing convention as the damage arrows: the player's
+   * forward vector is (-sin(yaw), -cos(yaw)), so the bearing they face is
+   * yaw + PI, and CSS rotate() runs clockwise while these bearings increase
+   * anticlockwise -- hence facing minus target.
+   */
+  setThreats(threats: readonly ThreatCue[], cameraYaw: number): void {
+    for (let i = 0; i < this.threatSlots.length; i++) {
+      const slot = this.threatSlots[i];
+      const threat = threats[i];
+
+      if (!threat) {
+        if (slot.active) {
+          slot.active = false;
+          slot.node.classList.remove('is-active', 'is-imminent');
+        }
+        continue;
+      }
+
+      const bearing = Math.atan2(threat.x, threat.z);
+      const angle = cameraYaw + Math.PI - bearing;
+      slot.node.style.transform = `rotate(${angle}rad)`;
+      slot.node.style.opacity = (0.2 + threat.intensity * 0.8).toFixed(2);
+
+      if (!slot.active) {
+        slot.active = true;
+        slot.node.classList.add('is-active');
+      }
+      slot.node.classList.toggle('is-imminent', threat.imminent);
+    }
+  }
+
   /** Directional hit indicator that keeps tracking the attacker's bearing. */
   showDamageDirection(worldDirection: THREE.Vector3): void {
     const bearing = new THREE.Vector2(worldDirection.x, worldDirection.z).normalize();
@@ -667,6 +727,10 @@ export class HUD {
     this.killEntries.length = 0;
     for (const arrow of this.damageArrows) arrow.node.remove();
     this.damageArrows.length = 0;
+    for (const slot of this.threatSlots) {
+      slot.active = false;
+      slot.node.classList.remove('is-active', 'is-imminent');
+    }
     this.hitMarker.classList.remove('is-active');
     this.banner.classList.remove('is-active');
     this.bossBar.classList.remove('is-active');

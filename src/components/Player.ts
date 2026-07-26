@@ -414,8 +414,16 @@ export class Player {
     this.camera.updateProjectionMatrix();
   }
 
+  /**
+   * Updates the camera aspect ratio.
+   *
+   * Guards against a degenerate value: a zero-height window (minimised, or an
+   * embed that hasn't been laid out yet) yields 0 or NaN, which silently
+   * corrupts the projection matrix and every FOV-derived calculation that
+   * reads back from it.
+   */
   setAspect(aspect: number): void {
-    this.camera.aspect = aspect;
+    this.camera.aspect = Number.isFinite(aspect) && aspect > 0.01 ? aspect : 16 / 9;
     this.camera.updateProjectionMatrix();
   }
 

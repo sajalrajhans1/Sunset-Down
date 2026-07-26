@@ -25,6 +25,7 @@ import { WeaponManager } from '../weapons/WeaponManager';
 import { WEAPONS, type WeaponId } from '../weapons/WeaponDefs';
 
 import { UIManager } from '../ui/UIManager';
+import type { ThreatCue } from '../ui/HUD';
 import { audio } from '../audio/AudioManager';
 import { textureLibrary } from '../textures/ProceduralTextures';
 import { updateStylizedTime } from '../textures/StylizedMaterial';
@@ -32,6 +33,9 @@ import { clamp01, damp } from '../utilities/MathUtils';
 import type { UpgradeId } from './Config';
 
 type GameState = 'boot' | 'menu' | 'playing' | 'paused' | 'dying' | 'gameover';
+
+/** How close a zombie must be before it registers as a threat, in metres. */
+const THREAT_RADIUS = 9;
 
 /**
  * The game host.
@@ -88,6 +92,9 @@ export class Game {
   private renderScale = 1;
 
   private lastCountdownBeep = -1;
+  /** Reused each frame so threat detection never allocates. */
+  private readonly threatBuffer: ThreatCue[] = [];
+  private threatWarnTimer = 0;
   private navRefreshTimer = 0;
   private readonly _tmpVec = new THREE.Vector3();
   private readonly _lookDir = new THREE.Vector3();
@@ -927,7 +934,71 @@ export class Game {
       this.zombies.activeZombies,
     );
 
+    this.updateThreatCues(dt);
+
     this.updateWaveCountdownAudio(dt);
+  }
+
+  /**
+   * Flags zombies closing in from outside the player's view.
+   *
+   * Anything in front is already on screen, so warning about it is noise --
+   * only contacts outside the horizontal field of view get a cue. That makes
+   * the indicator mean exactly one thing: "something you cannot see is about
+   * to reach you."
+   */
+  private updateThreatCues(dt: number): void {
+    const threats = this.threatBuffer;
+    threats.length = 0;
+
+    if (this.state === 'playing' && !this.player.dead) {
+      const px = this.player.position.x;
+      const pz = this.player.position.z;
+      // Bearing the player faces: forward is (-sin(yaw), -cos(yaw)).
+      const facing = this.player.yaw + Math.PI;
+
+      // Half the horizontal FOV, widened slightly so a zombie hugging the
+      // screen edge still counts as visible and doesn't flicker a warning.
+      const aspect = this.player.camera.aspect;
+      const safeAspect = Number.isFinite(aspect) && aspect > 0.01 ? aspect : 16 / 9;
+      const vertical = THREE.MathUtils.degToRad(this.player.camera.fov);
+      const horizontal = 2 * Math.atan(Math.tan(vertical * 0.5) * safeAspect);
+      const halfFov = horizontal * 0.5 + 0.12;
+
+      for (const zombie of this.zombies.activeZombies) {
+        if (!zombie.isAlive) continue;
+
+        const dx = zombie.position.x - px;
+        const dz = zombie.position.z - pz;
+        const distance = Math.hypot(dx, dz);
+        if (distance > THREAT_RADIUS || distance < 0.01) continue;
+
+        let relative = Math.atan2(dx, dz) - facing;
+        relative = ((relative + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        if (Math.abs(relative) < halfFov) continue;
+
+        threats.push({
+          x: dx / distance,
+          z: dz / distance,
+          intensity: clamp01(1 - distance / THREAT_RADIUS),
+          imminent: distance <= zombie.def.attackRange + zombie.radius + 0.6,
+        });
+      }
+
+      // Closest first, so the strongest cues survive the slot limit.
+      threats.sort((a, b) => b.intensity - a.intensity);
+      if (threats.length > 4) threats.length = 4;
+    }
+
+    this.ui.hud.setThreats(threats, this.player.yaw);
+
+    // A low pulse when something first gets within striking distance behind
+    // you -- the audio channel of the same warning.
+    this.threatWarnTimer -= dt;
+    if (this.threatWarnTimer <= 0 && threats.some((threat) => threat.imminent)) {
+      this.threatWarnTimer = 1.1;
+      audio.sfx.heartbeat();
+    }
   }
 
   /**
