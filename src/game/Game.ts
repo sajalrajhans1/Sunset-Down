@@ -7,10 +7,8 @@ import { settings, detectRecommendedPreset, type QualityProfile } from './Settin
 import { Player } from '../components/Player';
 import type { Zombie } from '../components/Zombie';
 import { loadZombieModel } from '../components/GlbZombieVisual';
-import { loadHandsModel } from '../weapons/FirstPersonHands';
 
 import { Village } from '../scenes/Village';
-import { loadTreeModels } from '../scenes/TreeModels';
 
 import { InputSystem } from '../systems/InputSystem';
 import { PostFX } from '../systems/PostFX';
@@ -140,30 +138,13 @@ export class Game {
     this.buildUi(uiRoot);
     await this.yieldFrame();
 
-    this.ui.setLoadingProgress(0.06, 'Lacing gloves');
-    try {
-      await loadHandsModel();
-    } catch (error) {
-      console.warn('[Sunset Hollow] Hands model failed to load:', error);
-    }
-    // Safe to build now that the model is resolved.
-    this.weapons.attachHands();
-
-    this.ui.setLoadingProgress(0.12, 'Mixing paint');
+    this.ui.setLoadingProgress(0.08, 'Mixing paint');
     this.player = new Player(this.stats, window.innerWidth / window.innerHeight);
     this.player.camera.add(this.weapons.rigRoot);
     this.scene.add(this.player.camera);
     await this.yieldFrame();
 
-    this.ui.setLoadingProgress(0.16, 'Planting the orchard');
-    try {
-      await loadTreeModels();
-    } catch (error) {
-      console.warn('[Sunset Hollow] Tree pack failed to load, using fallback trees:', error);
-    }
-    await this.yieldFrame();
-
-    this.ui.setLoadingProgress(0.24, 'Raising the rooftops');
+    this.ui.setLoadingProgress(0.2, 'Raising the rooftops');
     this.village = new Village(quality);
     this.village.build(this.scene, quality);
     this.scene.add(this.village.group);

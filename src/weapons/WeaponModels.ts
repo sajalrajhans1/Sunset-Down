@@ -29,10 +29,6 @@ export interface WeaponModel {
   action?: THREE.Object3D;
   /** Scope body, hidden while the sniper is aimed so the overlay reads clean. */
   scope?: THREE.Object3D;
-  /** Where the trigger hand's wrist sits. Drives hand IK. */
-  gripRight: THREE.Object3D;
-  /** Where the support hand's wrist sits. */
-  gripLeft: THREE.Object3D;
 }
 
 // --- Shared materials --------------------------------------------------------
@@ -179,9 +175,6 @@ function buildPistol(): WeaponModel {
     ejectPort: anchor(root, 0.04, 0.05, -0.02),
     slide,
     magazine,
-    // Two-handed pistol stance: support hand cups the firing hand.
-    gripRight: anchor(root, 0, -0.075, 0.035),
-    gripLeft: anchor(root, -0.045, -0.085, -0.01),
   };
 }
 
@@ -227,8 +220,6 @@ function buildSmg(): WeaponModel {
     ejectPort: anchor(root, 0.045, 0.036, -0.02),
     slide,
     magazine,
-    gripRight: anchor(root, 0, -0.085, 0.055),
-    gripLeft: anchor(root, 0, -0.06, -0.17),
   };
 }
 
@@ -270,9 +261,6 @@ function buildShotgun(): WeaponModel {
     muzzle: anchor(root, 0, 0.028, -0.63),
     ejectPort: anchor(root, 0.045, 0.02, 0.02),
     action,
-    gripRight: anchor(root, 0, -0.05, 0.075),
-    // Support hand rides the pump, so it travels with the action.
-    gripLeft: anchor(action, 0, -0.05, -0.28),
   };
 }
 
@@ -327,8 +315,6 @@ function buildRifle(): WeaponModel {
     ejectPort: anchor(root, 0.048, 0.04, 0.02),
     slide,
     magazine,
-    gripRight: anchor(root, 0, -0.09, 0.06),
-    gripLeft: anchor(root, 0, -0.045, -0.27),
   };
 }
 
@@ -387,8 +373,6 @@ function buildSniper(): WeaponModel {
     ejectPort: anchor(root, 0.05, 0.05, 0.05),
     action,
     scope,
-    gripRight: anchor(root, 0, -0.09, 0.085),
-    gripLeft: anchor(root, 0, -0.05, -0.3),
   };
 }
 

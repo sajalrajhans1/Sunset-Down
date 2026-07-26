@@ -557,9 +557,16 @@ export class HUD {
         this.damageArrows.splice(i, 1);
         continue;
       }
-      // Re-project the arrow every frame so it keeps pointing at the attacker
-      // even as the player spins around.
-      const angle = Math.atan2(arrow.worldDirection.x, arrow.worldDirection.y) - cameraYaw;
+      // Re-project every frame so the arrow keeps pointing at the attacker as
+      // the player spins.
+      //
+      // The player's forward vector is (-sin(yaw), -cos(yaw)), so the bearing
+      // they are facing is yaw + PI, not yaw. And CSS rotate() is clockwise
+      // while atan2 bearings increase anticlockwise here, so the difference is
+      // taken facing-minus-target rather than the other way round. Getting
+      // either wrong points the arrow at the one place the attacker is not.
+      const targetBearing = Math.atan2(arrow.worldDirection.x, arrow.worldDirection.y);
+      const angle = cameraYaw + Math.PI - targetBearing;
       arrow.node.style.transform = `rotate(${angle}rad)`;
     }
 
@@ -611,15 +618,26 @@ export class HUD {
 
   /** Directional hit indicator that keeps tracking the attacker's bearing. */
   showDamageDirection(worldDirection: THREE.Vector3): void {
-    const node = el('div', { className: 'sh-damage-arrow' });
-    this.damageRing.appendChild(node);
-    this.damageArrows.push({
-      node,
-      timer: 1.05,
-      worldDirection: new THREE.Vector2(worldDirection.x, worldDirection.z),
-    });
+    const bearing = new THREE.Vector2(worldDirection.x, worldDirection.z).normalize();
 
-    while (this.damageArrows.length > 6) {
+    // Being clawed repeatedly from one side should make a single indicator
+    // insistent, not stack six overlapping copies.
+    for (const existing of this.damageArrows) {
+      if (existing.worldDirection.dot(bearing) > 0.9) {
+        existing.worldDirection.copy(bearing);
+        existing.timer = 1.35;
+        existing.node.classList.remove('is-pulse');
+        void existing.node.offsetWidth;
+        existing.node.classList.add('is-pulse');
+        return;
+      }
+    }
+
+    const node = el('div', { className: 'sh-damage-arrow is-pulse' });
+    this.damageRing.appendChild(node);
+    this.damageArrows.push({ node, timer: 1.35, worldDirection: bearing });
+
+    while (this.damageArrows.length > 5) {
       const oldest = this.damageArrows.shift();
       oldest?.node.remove();
     }

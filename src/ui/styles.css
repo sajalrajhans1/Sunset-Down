@@ -1535,6 +1535,17 @@ body {
   overflow: hidden;
 }
 
+/*
+ * Directional damage indicator.
+ *
+ * A wide glowing arc pushed out toward the edge of the screen, not a small
+ * chevron near the crosshair: when something is chewing on you the eye is on
+ * the centre of the screen, and peripheral shape and colour register far
+ * faster than a thin outline does.
+ *
+ * The element itself is a zero-size pivot at screen centre, rotated to the
+ * attacker's bearing; the arc lives on ::before, pushed outward along -Y.
+ */
 .sh-damage-arrow {
   position: absolute;
   left: 50%;
@@ -1542,26 +1553,42 @@ body {
   width: 0;
   height: 0;
   transform-origin: 0 0;
-  animation: sh-damage-arrow 1.05s var(--sh-ease-out) both;
+  will-change: transform;
 }
 
 .sh-damage-arrow::before {
   content: '';
   position: absolute;
-  width: 74px;
-  height: 74px;
-  transform: translate(-50%, -170px) rotate(45deg);
-  border-top: 5px solid var(--sh-red);
-  border-left: 5px solid var(--sh-red);
-  border-radius: 12px 0 0 0;
-  filter: drop-shadow(0 0 14px rgba(255, 60, 80, 0.9));
-  opacity: 0.9;
+  width: 300px;
+  height: 300px;
+  /* Half-way out from centre, so it sits in peripheral vision. */
+  transform: translate(-50%, -50%) translateY(-27vh);
+  border-radius: 50%;
+  /* A tapered wedge of red, brightest at the point nearest the attacker. */
+  background: radial-gradient(
+    ellipse 60% 100% at 50% 100%,
+    rgba(255, 45, 70, 0.92) 0%,
+    rgba(255, 60, 90, 0.55) 38%,
+    rgba(255, 80, 110, 0) 72%
+  );
+  filter: blur(2px) drop-shadow(0 0 26px rgba(255, 40, 70, 0.85));
+}
+
+/* Restarted on every fresh hit from that bearing. */
+.sh-damage-arrow.is-pulse {
+  animation: sh-damage-arrow 1.35s var(--sh-ease-out) both;
 }
 
 @keyframes sh-damage-arrow {
   0% { opacity: 0; }
-  15% { opacity: 1; }
+  8% { opacity: 1; }
+  35% { opacity: 0.72; }
   100% { opacity: 0; }
+}
+
+/* Reduced-motion users still get the position, just without the flare-up. */
+:root[data-reduced-motion='true'] .sh-damage-arrow.is-pulse {
+  animation-duration: 1.35s;
 }
 
 /* --- Boss bar --- */
