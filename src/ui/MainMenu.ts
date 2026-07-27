@@ -1,4 +1,5 @@
 import { button, el } from './dom';
+import { LeaderboardPanel } from './LeaderboardPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { audio } from '../audio/AudioManager';
 import { settings } from '../game/Settings';
@@ -27,6 +28,9 @@ export interface MainMenuCallbacks {
  */
 export class MainMenu {
   readonly root: HTMLElement;
+
+  /** Always on the menu, never behind a button — see LeaderboardPanel. */
+  readonly board = new LeaderboardPanel();
   readonly settingsPanel = new SettingsPanel();
 
   private readonly recordsRow: HTMLElement;
@@ -49,7 +53,10 @@ export class MainMenu {
         el('div', { className: 'sh-menu__rays', attrs: { 'aria-hidden': 'true' } }),
         this.moteContainer,
         el('div', { className: 'sh-menu__vignette', attrs: { 'aria-hidden': 'true' } }),
-        this.buildContent(),
+        el('div', {
+          className: 'sh-menu__layout',
+          children: [this.buildContent(), this.buildBoardColumn()],
+        }),
         el('div', { className: 'sh-menu__footer', text: 'Built with Three.js · WebGL · Web Audio' }),
         this.creditsOverlay,
       ],
@@ -107,6 +114,11 @@ export class MainMenu {
         this.recordsRow,
       ],
     });
+  }
+
+  /** Second column of the menu: the standings. */
+  private buildBoardColumn(): HTMLElement {
+    return el('div', { className: 'sh-menu__board', children: [this.board.root] });
   }
 
   /** Drifting embers layered over the backdrop. */
@@ -271,6 +283,9 @@ export class MainMenu {
 
   show(): void {
     this.root.classList.remove('sh-screen--hidden');
+    // Refreshed on every return to the menu, so a score submitted a moment ago
+    // is already there. The panel throttles this internally.
+    void this.board.refresh();
   }
 
   hide(): void {

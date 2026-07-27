@@ -9,6 +9,7 @@ import type { Zombie } from '../components/Zombie';
 import { loadZombieModel } from '../components/GlbZombieVisual';
 import { loadBossModel } from '../components/GlbBossVisual';
 import { MapZones } from '../systems/MapZones';
+import { leaderboard } from '../systems/Leaderboard';
 
 import { Village } from '../scenes/Village';
 
@@ -380,6 +381,10 @@ export class Game {
     // autoplay policies leave resume() pending indefinitely, and AudioCore also
     // unlocks itself from its own global gesture listeners.
     void audio.resume();
+
+    // Opens a server-timed run so the score can be checked against a clock the
+    // client does not control. Non-blocking; a failure only costs global rank.
+    leaderboard.beginRun();
 
     this.stats.reset();
     this.economy.reset();

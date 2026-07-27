@@ -1,6 +1,8 @@
 import { button, clearChildren, el } from './dom';
 import type { RunStats } from '../systems/EconomySystem';
 import { formatTime } from '../utilities/MathUtils';
+import { LeaderboardPanel } from './LeaderboardPanel';
+import { leaderboard, sanitiseName, MAX_NAME_LENGTH } from '../systems/Leaderboard';
 
 export interface GameOverCallbacks {
   onPlayAgain: () => void;
@@ -26,17 +28,75 @@ export interface GameOverData {
 export class GameOverScreen {
   readonly root: HTMLElement;
 
+  /** Standings, shown under the stats so a run ends on the competition. */
+  readonly board = new LeaderboardPanel({ compact: true });
+
   private readonly title: HTMLElement;
   private readonly subtitle: HTMLElement;
   private readonly recordBadge: HTMLElement;
   private readonly statsGrid: HTMLElement;
   private countUpHandle: number | null = null;
 
+  // --- Score submission ---
+  private readonly submitRow: HTMLElement;
+  private readonly nameInput: HTMLInputElement;
+  private readonly submitButton: HTMLButtonElement;
+  private readonly submitStatus: HTMLElement;
+  private pendingRun: { wave: number; kills: number; timeSurvived: number } | null = null;
+
   constructor(callbacks: GameOverCallbacks) {
     this.title = el('h2', { className: 'sh-gameover__title', text: 'Sun Down' });
     this.subtitle = el('p', { className: 'sh-gameover__subtitle', text: '' });
     this.recordBadge = el('span', { className: 'sh-gameover__record', text: '' });
     this.statsGrid = el('div', { className: 'sh-stats' });
+
+    this.nameInput = el('input', {
+      className: 'sh-submit__input',
+      attrs: {
+        type: 'text',
+        maxlength: String(MAX_NAME_LENGTH),
+        placeholder: 'Your name',
+        'aria-label': 'Name for the leaderboard',
+        autocomplete: 'off',
+        spellcheck: 'false',
+      },
+    }) as HTMLInputElement;
+
+    // Reflect the cleaning rules as the player types, so what they see on the
+    // board is exactly what they typed here.
+    this.nameInput.addEventListener('input', () => {
+      const cleaned = sanitiseName(this.nameInput.value);
+      if (cleaned !== this.nameInput.value) this.nameInput.value = cleaned;
+      this.submitButton.disabled = cleaned.trim().length === 0;
+    });
+    this.nameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') void this.submitScore();
+    });
+
+    this.submitButton = button({
+      label: 'Submit score',
+      variant: 'primary',
+      onClick: () => void this.submitScore(),
+    }) as HTMLButtonElement;
+
+    this.submitStatus = el('p', { className: 'sh-submit__status' });
+
+    this.submitRow = el('div', {
+      className: 'sh-submit',
+      children: [
+        el('label', {
+          className: 'sh-submit__label',
+          text: 'Put your name on the board',
+          attrs: { for: 'sh-name-input' },
+        }),
+        el('div', {
+          className: 'sh-submit__row',
+          children: [this.nameInput, this.submitButton],
+        }),
+        this.submitStatus,
+      ],
+    });
+    this.nameInput.id = 'sh-name-input';
 
     const modal = el('div', {
       className: 'sh-panel sh-modal sh-gameover',
@@ -46,7 +106,10 @@ export class GameOverScreen {
           style: { flexDirection: 'column', alignItems: 'stretch' },
           children: [this.title, this.subtitle, this.recordBadge],
         }),
-        el('div', { className: 'sh-modal__body', children: [this.statsGrid] }),
+        el('div', {
+          className: 'sh-modal__body',
+          children: [this.statsGrid, this.submitRow, this.board.root],
+        }),
         el('div', {
           className: 'sh-modal__footer',
           children: [
@@ -71,6 +134,10 @@ export class GameOverScreen {
 
   show(data: GameOverData): void {
     const { stats } = data;
+
+    this.prepareSubmission(data);
+    this.board.setHighlight(null);
+    void this.board.refresh(true);
 
     this.subtitle.textContent =
       data.waveReached <= 1
@@ -155,5 +222,72 @@ export class GameOverScreen {
 
   get isOpen(): boolean {
     return !this.root.classList.contains('sh-screen--hidden');
+  }
+
+  // -------------------------------------------------------------------------
+  // Leaderboard submission
+  // -------------------------------------------------------------------------
+
+  /** Resets the form for a fresh result and pre-fills the last used name. */
+  private prepareSubmission(data: GameOverData): void {
+    this.pendingRun = {
+      wave: data.waveReached,
+      kills: data.stats.kills,
+      timeSurvived: data.stats.timeSurvived,
+    };
+
+    this.nameInput.value = leaderboard.savedName;
+    this.nameInput.disabled = false;
+    this.submitButton.disabled = this.nameInput.value.trim().length === 0;
+    this.submitButton.textContent = 'Submit score';
+    this.submitStatus.textContent = '';
+    this.submitStatus.className = 'sh-submit__status';
+
+    // Surviving nothing is not a score.
+    const eligible = data.waveReached >= 1;
+    this.submitRow.style.display = eligible ? '' : 'none';
+  }
+
+  private async submitScore(): Promise<void> {
+    if (!this.pendingRun) return;
+
+    const name = sanitiseName(this.nameInput.value).trim();
+    if (!name) {
+      this.setStatus('Enter a name first.', 'error');
+      return;
+    }
+
+    // Lock the form immediately: a run token is good for exactly one score,
+    // and a double-click would spend it on a duplicate request.
+    this.submitButton.disabled = true;
+    this.nameInput.disabled = true;
+    this.submitButton.textContent = 'Submitting…';
+
+    const result = await leaderboard.submit({ name, ...this.pendingRun });
+
+    this.submitButton.textContent = 'Submitted';
+
+    if (result.global && result.recorded) {
+      this.setStatus(
+        result.rank ? `You are #${result.rank} this month.` : 'Your score is on the board.',
+        'success',
+      );
+    } else if (result.global && result.reason === 'not a personal best') {
+      this.setStatus('Your best run this month still stands.', 'info');
+    } else if (result.reason === 'run already submitted') {
+      this.setStatus('That run has already been submitted.', 'info');
+    } else {
+      // Saved locally either way, so say what actually happened.
+      this.setStatus('Saved on this device — the global board was unreachable.', 'info');
+    }
+
+    this.board.setHighlight(null);
+    void this.board.refresh(true);
+    this.pendingRun = null;
+  }
+
+  private setStatus(message: string, kind: 'success' | 'error' | 'info'): void {
+    this.submitStatus.textContent = message;
+    this.submitStatus.className = `sh-submit__status is-${kind}`;
   }
 }

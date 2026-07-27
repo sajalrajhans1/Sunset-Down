@@ -105,13 +105,35 @@ Needs **WebGL 2**. It'll tell you politely if that's missing.
 
 ## Deploying
 
-It's a static bundle — any host will do. On Vercel, the Vite preset is detected automatically; if you're configuring by hand:
+The game itself is a static bundle — any host will do. On Vercel, the Vite preset is detected automatically; if you're configuring by hand:
 
 - Build command: `npm run build`
 - Output directory: `dist`
 - Install command: `npm install`
 
-No environment variables, no server-side anything.
+The leaderboard adds two Edge functions in `api/`, which Vercel picks up on its own. They're optional: with no database configured the game runs exactly as before and the board falls back to each player's own browser.
+
+### Turning on the global leaderboard
+
+1. Create a Redis database — Vercel dashboard → Storage → Upstash, or directly at [upstash.com](https://upstash.com). The free tier is far more than this needs.
+2. Copy the two REST values from the database page.
+3. In Vercel → Settings → Environment Variables, add:
+
+   | Variable | Value |
+   |---|---|
+   | `UPSTASH_REDIS_REST_URL` | from Upstash |
+   | `UPSTASH_REDIS_REST_TOKEN` | from Upstash |
+   | `LEADERBOARD_SECRET` | any long random string — `openssl rand -hex 32` |
+
+4. Redeploy.
+
+For local development, copy `.env.example` to `.env.local` and fill in the same three values. `npm run dev` serves the `api/` routes through a small Vite middleware, so the leaderboard works locally exactly as it does in production.
+
+### How the board is stored
+
+One Redis sorted set per calendar month, keyed `lb:2026-07`. The "monthly reset" isn't a scheduled job that could fail — it's just the calendar rolling on to a key that doesn't exist yet. Old months sit untouched under their own keys until a 70-day TTL clears them.
+
+Scores are ranked `wave × 1,000,000 + kills`, so wave always wins and kills break ties. Each name keeps only its best run for the month, matched case-insensitively, so one person having a good week can't fill the board.
 
 ---
 

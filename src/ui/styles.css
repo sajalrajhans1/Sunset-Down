@@ -2975,3 +2975,296 @@ body {
   background: rgba(255, 93, 107, 0.16);
   color: var(--sh-red);
 }
+
+/* =========================================================================
+   Monthly leaderboard
+   ========================================================================= */
+
+/* Two columns on the menu: identity and actions on the left, standings on
+   the right. Collapses to one column when there isn't room for both. */
+.sh-menu__layout {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(24px, 4vw, 64px);
+  width: 100%;
+  height: 100%;
+  padding: 4vh clamp(20px, 5vw, 72px);
+  box-sizing: border-box;
+}
+
+.sh-menu__board {
+  flex: 0 1 420px;
+  min-width: 0;
+  max-height: 76vh;
+  display: flex;
+}
+
+@media (max-width: 1080px), (max-height: 620px) {
+  /* Below this the board would squeeze the title, and the menu reads better
+     as a single column with the standings dropped. */
+  .sh-menu__board {
+    display: none;
+  }
+}
+
+.sh-board {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 22px 22px 18px;
+  border-radius: var(--sh-radius-lg);
+  border: 1px solid var(--sh-panel-border);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-md);
+  backdrop-filter: blur(14px);
+}
+
+.sh-board__header {
+  margin-bottom: 14px;
+}
+
+.sh-board__title {
+  margin: 0;
+  font-family: var(--sh-font-display);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--sh-gold-bright);
+}
+
+.sh-board__subtitle {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__columns,
+.sh-board__row {
+  display: grid;
+  /* rank | survivor | wave | kills | time */
+  grid-template-columns: 28px 1fr 46px 56px 52px;
+  gap: 8px;
+  align-items: center;
+}
+
+.sh-board__columns {
+  padding: 0 10px 8px;
+  border-bottom: 1px solid rgba(255, 200, 97, 0.14);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__col--wave,
+.sh-board__col--kills,
+.sh-board__col--time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-board__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 6px 0 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 200, 97, 0.3) transparent;
+}
+
+.sh-board__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sh-board__list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 200, 97, 0.3);
+}
+
+.sh-board__row {
+  padding: 7px 10px;
+  border-radius: var(--sh-radius-sm);
+  font-size: 13.5px;
+  color: var(--sh-text-dim);
+  transition: background 0.18s var(--sh-ease-out);
+}
+
+.sh-board__row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sh-board__col--rank {
+  font-weight: 800;
+  color: var(--sh-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Top three earn a little colour; everything below stays quiet. */
+.sh-board__row.is-podium .sh-board__col--rank { color: var(--sh-gold); }
+.sh-board__row.is-rank-1 .sh-board__col--rank { color: #ffd76a; }
+.sh-board__row.is-rank-2 .sh-board__col--rank { color: #d8d8e4; }
+.sh-board__row.is-rank-3 .sh-board__col--rank { color: #e0a071; }
+
+.sh-board__row.is-rank-1 .sh-board__name {
+  color: var(--sh-gold-bright);
+  font-weight: 800;
+}
+
+/* The player's own freshly submitted row. */
+.sh-board__row.is-mine {
+  background: rgba(255, 200, 97, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 200, 97, 0.32);
+}
+
+.sh-board__col--name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sh-board__flag {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.sh-board__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sh-text);
+}
+
+.sh-board__col--wave {
+  font-weight: 800;
+  color: var(--sh-cyan);
+}
+
+.sh-board__empty {
+  padding: 26px 12px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__note {
+  display: none;
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__note.is-visible {
+  display: block;
+}
+
+/* Placeholder rows while the first fetch is in flight. */
+.sh-board__row--skeleton {
+  height: 31px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: sh-board-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sh-board-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-board__row--skeleton { animation: none; }
+}
+
+/* --- Compact variant, used on the game over screen ---------------------- */
+
+.sh-board--compact {
+  margin-top: 18px;
+  padding: 16px 16px 12px;
+  background: rgba(0, 0, 0, 0.18);
+  backdrop-filter: none;
+}
+
+.sh-board--compact .sh-board__title { font-size: 16px; }
+.sh-board--compact .sh-board__list { overflow: visible; }
+
+/* =========================================================================
+   Score submission
+   ========================================================================= */
+
+.sh-submit {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-panel-border);
+  background: rgba(255, 200, 97, 0.06);
+}
+
+.sh-submit__label {
+  display: block;
+  margin-bottom: 9px;
+  font-family: var(--sh-font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sh-gold-bright);
+}
+
+.sh-submit__row {
+  display: flex;
+  gap: 10px;
+}
+
+.sh-submit__input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--sh-radius-sm);
+  border: 1px solid rgba(255, 200, 97, 0.26);
+  background: rgba(9, 4, 18, 0.5);
+  color: var(--sh-text);
+  font-family: var(--sh-font-body);
+  font-size: 15px;
+  font-weight: 700;
+  transition: border-color 0.18s var(--sh-ease-out), box-shadow 0.18s var(--sh-ease-out);
+}
+
+.sh-submit__input::placeholder {
+  color: var(--sh-text-faint);
+  font-weight: 600;
+}
+
+.sh-submit__input:focus {
+  outline: none;
+  border-color: var(--sh-gold);
+  box-shadow: 0 0 0 3px rgba(255, 200, 97, 0.18);
+}
+
+.sh-submit__input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sh-submit__status {
+  min-height: 17px;
+  margin: 9px 0 0;
+  font-size: 12.5px;
+  color: var(--sh-text-faint);
+}
+
+.sh-submit__status.is-success { color: var(--sh-mint); }
+.sh-submit__status.is-error { color: var(--sh-red); }
+.sh-submit__status.is-info { color: var(--sh-text-dim); }
