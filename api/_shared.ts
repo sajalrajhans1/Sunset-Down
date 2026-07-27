@@ -10,8 +10,16 @@
  * board, so a fresh clone with no backend still runs.
  */
 
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL ?? '';
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
+/**
+ * Redis credentials.
+ *
+ * Two naming conventions are accepted. Creating the database from the Vercel
+ * Marketplace injects `KV_REST_API_*` automatically; creating it directly at
+ * upstash.com gives you `UPSTASH_REDIS_REST_*`. Reading both means the
+ * integration works with no manual copying either way.
+ */
+const REDIS_URL = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? '';
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN ?? '';
 
 /**
  * Secret used to sign run tokens. Falls back to a build-local value so the
@@ -22,6 +30,16 @@ const RUN_SECRET = process.env.LEADERBOARD_SECRET ?? '';
 
 export const isConfigured = (): boolean =>
   REDIS_URL.length > 0 && REDIS_TOKEN.length > 0 && RUN_SECRET.length > 0;
+
+/**
+ * Which pieces of configuration are present, for the health endpoint.
+ * Reports only presence — never a value, or any part of one.
+ */
+export const configState = (): Record<string, boolean> => ({
+  redisUrl: REDIS_URL.length > 0,
+  redisToken: REDIS_TOKEN.length > 0,
+  secret: RUN_SECRET.length > 0,
+});
 
 // ---------------------------------------------------------------------------
 // Redis

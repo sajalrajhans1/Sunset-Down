@@ -18,7 +18,16 @@ function apiDevServer(): Plugin {
       // .env.local, which Vite exposes to the client bundle but not to modules
       // it loads server-side — so copy them across for the handlers to read.
       const env = loadEnv(mode, process.cwd(), '');
-      for (const key of ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'LEADERBOARD_SECRET']) {
+      const keys = [
+        // Injected by the Vercel Marketplace integration.
+        'KV_REST_API_URL',
+        'KV_REST_API_TOKEN',
+        // Used when the database is created directly at upstash.com.
+        'UPSTASH_REDIS_REST_URL',
+        'UPSTASH_REDIS_REST_TOKEN',
+        'LEADERBOARD_SECRET',
+      ];
+      for (const key of keys) {
         if (env[key] && !process.env[key]) process.env[key] = env[key];
       }
     },

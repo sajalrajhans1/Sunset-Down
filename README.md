@@ -115,19 +115,25 @@ The leaderboard adds two Edge functions in `api/`, which Vercel picks up on its 
 
 ### Turning on the global leaderboard
 
-1. Create a Redis database — Vercel dashboard → Storage → Upstash, or directly at [upstash.com](https://upstash.com). The free tier is far more than this needs.
-2. Copy the two REST values from the database page.
-3. In Vercel → Settings → Environment Variables, add:
+1. Create a Redis database — Vercel dashboard → Storage → Upstash. The free tier is far more than this needs.
+2. Connect it to the project. That injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you; there is nothing to copy.
+3. Add one more variable by hand under Settings → Environment Variables:
 
    | Variable | Value |
    |---|---|
-   | `UPSTASH_REDIS_REST_URL` | from Upstash |
-   | `UPSTASH_REDIS_REST_TOKEN` | from Upstash |
-   | `LEADERBOARD_SECRET` | any long random string — `openssl rand -hex 32` |
+   | `LEADERBOARD_SECRET` | any long random string |
 
-4. Redeploy.
+   Generate one with `openssl rand -hex 32`, or in PowerShell:
 
-For local development, copy `.env.example` to `.env.local` and fill in the same three values. `npm run dev` serves the `api/` routes through a small Vite middleware, so the leaderboard works locally exactly as it does in production.
+   ```powershell
+   -join ((1..64) | ForEach-Object { '{0:x}' -f (Get-Random -Max 16) })
+   ```
+
+4. Redeploy, then open `/api/health` — it reports which pieces of configuration it can see, and how many entries are on this month's board, without echoing any secret.
+
+Creating the database directly at [upstash.com](https://upstash.com) instead works too; the code reads `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` as well.
+
+For local development, copy `.env.example` to `.env.local` and fill it in. `npm run dev` serves the `api/` routes through a small Vite middleware, so the leaderboard works locally exactly as it does in production.
 
 ### How the board is stored
 
