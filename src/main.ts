@@ -1,11 +1,17 @@
 import './ui/styles.css';
-import { Game } from './game/Game';
+import { detectUnsupportedDevice, hasBypass, showUnsupportedScreen } from './game/DeviceSupport';
+import type { Game as GameType } from './game/Game';
 
 /**
  * Entry point.
  *
- * Verifies WebGL support, boots the game, and installs a last-resort error
- * screen so a failure never leaves the player looking at a black rectangle.
+ * Checks the device can actually play, verifies WebGL support, boots the game,
+ * and installs a last-resort error screen so a failure never leaves the player
+ * looking at a black rectangle.
+ *
+ * The engine is pulled in with a dynamic import rather than a static one, so a
+ * phone that gets turned away never downloads Three.js or any of the art. Vite
+ * emits a modulepreload hint for it, so desktop start-up is unaffected.
  */
 
 function showFatalError(title: string, detail: string): void {
@@ -45,6 +51,13 @@ async function boot(): Promise<void> {
     return;
   }
 
+  const unsupported = hasBypass() ? null : detectUnsupportedDevice();
+  if (unsupported) {
+    canvas.remove();
+    showUnsupportedScreen(uiRoot, unsupported);
+    return;
+  }
+
   if (!hasWebGL2()) {
     showFatalError(
       'WebGL 2 unavailable',
@@ -53,9 +66,10 @@ async function boot(): Promise<void> {
     return;
   }
 
-  const game = new Game(canvas);
-
+  let game: GameType;
   try {
+    const { Game } = await import('./game/Game');
+    game = new Game(canvas);
     await game.init(uiRoot);
   } catch (error) {
     console.error('[Sunset Hollow] Startup failed:', error);
@@ -69,7 +83,7 @@ async function boot(): Promise<void> {
   // Dev-only handle for inspecting live game state from the console.
   // Stripped from production builds by the bundler's dead-code elimination.
   if (import.meta.env.DEV) {
-    (window as unknown as { game: Game }).game = game;
+    (window as unknown as { game: GameType }).game = game;
   }
 
   // Release GPU resources cleanly on navigation away.

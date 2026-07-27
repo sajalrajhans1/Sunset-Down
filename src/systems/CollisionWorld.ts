@@ -22,6 +22,12 @@ export interface BoxCollider {
   height: number;
   /** Blocks navigation/movement. Decorative volumes can still be shot. */
   solid: boolean;
+  /**
+   * Switched off entirely — neither blocks nor stops bullets. Used by the
+   * buyable gates, which have to stop existing the moment they are opened
+   * without disturbing the broadphase every other collider is binned into.
+   */
+  enabled: boolean;
   /** Surface tint sampled for impact particles. */
   impactColor: number;
 }
@@ -34,17 +40,21 @@ export interface CylinderCollider {
   baseY: number;
   height: number;
   solid: boolean;
+  enabled: boolean;
   impactColor: number;
 }
 
 export type Collider = BoxCollider | CylinderCollider;
 
 /** `solid` and `impactColor` have sensible defaults, so callers may omit them. */
-export type BoxColliderInput = Omit<BoxCollider, 'kind' | 'solid' | 'impactColor'> &
-  Partial<Pick<BoxCollider, 'solid' | 'impactColor'>>;
+export type BoxColliderInput = Omit<BoxCollider, 'kind' | 'solid' | 'enabled' | 'impactColor'> &
+  Partial<Pick<BoxCollider, 'solid' | 'enabled' | 'impactColor'>>;
 
-export type CylinderColliderInput = Omit<CylinderCollider, 'kind' | 'solid' | 'impactColor'> &
-  Partial<Pick<CylinderCollider, 'solid' | 'impactColor'>>;
+export type CylinderColliderInput = Omit<
+  CylinderCollider,
+  'kind' | 'solid' | 'enabled' | 'impactColor'
+> &
+  Partial<Pick<CylinderCollider, 'solid' | 'enabled' | 'impactColor'>>;
 
 export interface RayHit {
   point: THREE.Vector3;
@@ -75,6 +85,7 @@ export class CollisionWorld {
       baseY: options.baseY,
       height: options.height,
       solid: options.solid ?? true,
+      enabled: options.enabled ?? true,
       impactColor: options.impactColor ?? 0xd8c8b0,
     };
     this.colliders.push(collider);
@@ -91,6 +102,7 @@ export class CollisionWorld {
       baseY: options.baseY,
       height: options.height,
       solid: options.solid ?? true,
+      enabled: options.enabled ?? true,
       impactColor: options.impactColor ?? 0xb08a60,
     };
     this.colliders.push(collider);
@@ -181,7 +193,7 @@ export class CollisionWorld {
 
       for (const idx of this._queryScratch) {
         const c = this.colliders[idx];
-        if (!c.solid) continue;
+        if (!c.solid || !c.enabled) continue;
         // Vertical overlap test — lets the player walk over low kerbs and
         // under raised awnings without being blocked.
         const top = c.baseY + c.height;
@@ -271,7 +283,7 @@ export class CollisionWorld {
     this.queryNear(x, z, radius + 1, this._queryScratch);
     for (const idx of this._queryScratch) {
       const c = this.colliders[idx];
-      if (!c.solid) continue;
+      if (!c.solid || !c.enabled) continue;
       if (testY >= c.baseY + c.height || testY < c.baseY - 0.5) continue;
 
       if (c.kind === 'cylinder') {
@@ -316,6 +328,7 @@ export class CollisionWorld {
     }
 
     for (const c of this.colliders) {
+      if (!c.enabled) continue;
       const hit =
         c.kind === 'cylinder'
           ? rayVsCylinder(origin, direction, c, bestDist)

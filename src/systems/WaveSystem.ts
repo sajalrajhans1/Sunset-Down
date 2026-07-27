@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import type { SpawnPoint } from '../scenes/Village';
 import { WAVES } from '../game/Config';
 import type { ZombieTypeId } from '../components/ZombieTypes';
 import { ZOMBIE_TYPES } from '../components/ZombieTypes';
-import { clamp01, pick } from '../utilities/MathUtils';
+import { clamp01 } from '../utilities/MathUtils';
 
 export type WavePhase = 'idle' | 'prep' | 'active' | 'cleared';
 
@@ -267,33 +268,46 @@ export class WaveSystem {
     };
   }
 
-  /** Picks a spawn point: far enough from the player to be fair, but not silly. */
+  /**
+   * Picks a spawn point: far enough from the player to be fair, but not silly,
+   * and only from districts the player has actually opened.
+   *
+   * Uses reservoir sampling rather than filtering into a new array. This runs
+   * on every single spawn, and the old version allocated a fresh array of
+   * points each time — a steady drip of garbage during the busiest moments of
+   * the game, which is exactly when a collection pause is most obvious.
+   */
   static chooseSpawnPoint(
-    candidates: readonly THREE.Vector3[],
+    candidates: readonly SpawnPoint[],
     playerPosition: THREE.Vector3,
+    isZoneOpen: (zone: SpawnPoint['zone']) => boolean,
     minDistance = 22,
     maxDistance = 70,
   ): THREE.Vector3 | null {
-    if (candidates.length === 0) return null;
+    let chosen: THREE.Vector3 | null = null;
+    let seen = 0;
 
-    const viable = candidates.filter((point) => {
+    // Fallback: the furthest reachable point, if none land in the ideal band.
+    let furthest: THREE.Vector3 | null = null;
+    let furthestDistance = -1;
+
+    for (const candidate of candidates) {
+      if (!isZoneOpen(candidate.zone)) continue;
+      const point = candidate.position;
       const distance = Math.hypot(point.x - playerPosition.x, point.z - playerPosition.z);
-      return distance >= minDistance && distance <= maxDistance;
-    });
 
-    if (viable.length > 0) return pick(viable);
-
-    // Fall back to the furthest point if nothing is in the ideal band.
-    let best = candidates[0];
-    let bestDistance = -1;
-    for (const point of candidates) {
-      const distance = Math.hypot(point.x - playerPosition.x, point.z - playerPosition.z);
-      if (distance > bestDistance) {
-        bestDistance = distance;
-        best = point;
+      if (distance > furthestDistance) {
+        furthestDistance = distance;
+        furthest = point;
       }
+
+      if (distance < minDistance || distance > maxDistance) continue;
+      seen++;
+      // Each viable point has an equal 1/seen chance of taking the slot.
+      if (Math.random() * seen < 1) chosen = point;
     }
-    return best;
+
+    return chosen ?? furthest;
   }
 }
 

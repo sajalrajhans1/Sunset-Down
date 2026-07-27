@@ -2840,3 +2840,138 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* =========================================================================
+   Unsupported device
+   Shown instead of the game on phones and tablets. Deliberately free of any
+   image assets — a blocked device should pay almost nothing to be told no.
+   ========================================================================= */
+
+.sh-unsupported {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #4a2350 0%, transparent 60%),
+    radial-gradient(100% 70% at 50% 100%, #61304a 0%, transparent 55%),
+    linear-gradient(180deg, #2a1740 0%, #170d26 100%);
+  color: var(--sh-text);
+  font-family: var(--sh-font-body);
+  text-align: center;
+  overflow-y: auto;
+}
+
+/* A low sun sitting behind the card, so the screen still feels like the game. */
+.sh-unsupported::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 8%;
+  width: min(560px, 90vw);
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 138, 61, 0.5) 0%, transparent 62%);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+.sh-unsupported__card {
+  position: relative;
+  max-width: 420px;
+  padding: 40px 30px 34px;
+  border-radius: var(--sh-radius-lg);
+  border: 1px solid var(--sh-panel-border);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow-lg);
+  backdrop-filter: blur(14px);
+}
+
+.sh-unsupported__glyph {
+  font-size: 58px;
+  line-height: 1;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+}
+
+.sh-unsupported__title {
+  margin: 0 0 14px;
+  font-family: var(--sh-font-display);
+  font-size: clamp(26px, 7vw, 34px);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--sh-gold-bright);
+  text-shadow: var(--sh-glow-gold);
+}
+
+.sh-unsupported__body {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--sh-text-dim);
+}
+
+.sh-unsupported__body--muted {
+  color: var(--sh-text-faint);
+  font-size: 14px;
+}
+
+.sh-unsupported__mark {
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 200, 97, 0.16);
+  font-family: var(--sh-font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--sh-gold);
+  opacity: 0.75;
+}
+
+/* Understated on purpose: an escape hatch, not a call to action. */
+.sh-unsupported__anyway {
+  margin-top: 16px;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--sh-text-faint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.18s var(--sh-ease-out);
+}
+
+.sh-unsupported__anyway:hover,
+.sh-unsupported__anyway:focus-visible {
+  color: var(--sh-text-dim);
+}
+
+/* Coin cost inside an interaction prompt. */
+.sh-prompt__cost {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 9px 2px;
+  border-radius: 999px;
+  background: rgba(255, 200, 97, 0.16);
+  color: var(--sh-gold-bright);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-prompt__cost::before {
+  content: '◈';
+  margin-right: 4px;
+  opacity: 0.7;
+}
+
+/* Shown when the player cannot afford it. */
+.sh-prompt__cost--short {
+  background: rgba(255, 93, 107, 0.16);
+  color: var(--sh-red);
+}

@@ -29,8 +29,34 @@ import { WORLD } from '../game/Config';
 import type { QualityProfile } from '../game/Settings';
 import { blobShadowTexture } from '../textures/ProceduralTextures';
 import { mulberry32, TAU } from '../utilities/MathUtils';
+import { MapZones, WALL_RADIUS, type ZoneId } from '../systems/MapZones';
 
 const PLAZA_RADIUS = 19;
+
+/** A spawn location and the district that has to be open for it to be used. */
+export interface SpawnPoint {
+  position: THREE.Vector3;
+  zone: ZoneId | 'plaza';
+}
+
+/**
+ * Assigns an outer spawn point to whichever gate it sits closest to, so every
+ * point belongs to exactly one district — including the stretches of map that
+ * have no gate directly facing them.
+ */
+function nearestZone(angle: number): ZoneId {
+  let best = MapZones.definitions[0];
+  let bestDelta = Infinity;
+  for (const zone of MapZones.definitions) {
+    let delta = angle - zone.angle;
+    delta = Math.abs(((delta + Math.PI) % TAU + TAU) % TAU - Math.PI);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = zone;
+    }
+  }
+  return best.id;
+}
 
 /**
  * The map. Owns geometry, collision, navigation, lighting and atmosphere.
@@ -47,7 +73,12 @@ export class Village {
   readonly environment = new Environment();
 
   /** Perimeter positions where waves stream in from. */
-  readonly spawnPoints: THREE.Vector3[] = [];
+  /**
+   * Every place a zombie can appear, tagged with the district it belongs to.
+   * Points in a district that is still barricaded are skipped, so opening a
+   * gate is what puts those approaches into play.
+   */
+  readonly spawnPoints: SpawnPoint[] = [];
 
   private readonly dynamicProps = new THREE.Group();
   private readonly batchedMeshes: THREE.Mesh[] = [];
@@ -74,7 +105,7 @@ export class Village {
   // Construction
   // -------------------------------------------------------------------------
 
-  build(scene: THREE.Scene, quality: QualityProfile): void {
+  build(scene: THREE.Scene, quality: QualityProfile, zones: MapZones): void {
     const rand = mulberry32(20260724);
     const batcher = new MeshBatcher(30);
     const lightRequests: LightRequest[] = [];
@@ -89,12 +120,18 @@ export class Village {
 
     this.buildGround();
     this.buildPlazaRing(ctx);
+    this.buildZoneWall(ctx);
     this.buildResidentialRing(ctx, rand);
     this.buildCarnivalDistrict(ctx, rand);
     this.buildMarketRow(ctx, rand);
     this.buildParkland(ctx, rand);
     this.buildPerimeter(ctx, rand);
     this.buildFestoonLighting(ctx, rand);
+
+    // Gates register their colliders here, before the broadphase is binned and
+    // navigation is baked, so a shut barricade genuinely blocks pathfinding.
+    zones.build(this.collision);
+    this.group.add(zones.group);
 
     // Bake all static geometry down to a handful of merged draw calls.
     const meshes = batcher.build(true, true);
@@ -138,6 +175,96 @@ export class Village {
       street.position.set(Math.cos(angle) * 38, 0.005, Math.sin(angle) * 38);
       street.receiveShadow = true;
       this.group.add(street);
+    }
+  }
+
+  /**
+   * The wall that turns the plaza into a starting room.
+   *
+   * A continuous stone-and-timber ring at WALL_RADIUS, with an opening left at
+   * each gate bearing. Without this the districts would only be *nominally*
+   * locked — a player could stroll around any single barricade through the
+   * alleys between cottages, and paying to open one would mean nothing.
+   *
+   * Segments are placed by arc so the ring stays even, and each one registers
+   * its own short collider rather than one giant box, which keeps the wall
+   * curved for both bullets and pathfinding.
+   */
+  private buildZoneWall(ctx: BuildContext): void {
+    const segments = 72;
+    const gates = MapZones.definitions;
+    const step = TAU / segments;
+    // Chord length of one segment, plus a hair of overlap so there are no gaps
+    // for a zombie to squeeze through on the diagonal.
+    const width = 2 * WALL_RADIUS * Math.sin(step * 0.5) + 0.12;
+
+    for (let i = 0; i < segments; i++) {
+      const angle = i * step;
+
+      // Leave the openings clear.
+      let inGap = false;
+      for (const gate of gates) {
+        let delta = angle - gate.angle;
+        delta = ((delta + Math.PI) % TAU + TAU) % TAU - Math.PI;
+        if (Math.abs(delta) < gate.gap) {
+          inGap = true;
+          break;
+        }
+      }
+      if (inGap) continue;
+
+      const x = Math.cos(angle) * WALL_RADIUS;
+      const z = Math.sin(angle) * WALL_RADIUS;
+      // The primitive is long on its local X, and a Y rotation of phi points
+      // that axis along (cos phi, -sin phi). Setting that equal to the tangent
+      // (-sin a, cos a) gives phi = -a - PI/2. Getting this wrong leaves the
+      // segments splayed radially and the ring full of holes.
+      const meshRotation = -angle - Math.PI / 2;
+      // The collider's local X runs along (cos r, sin r), so it needs the
+      // opposite sign convention for the same physical alignment.
+      const colliderRotation = angle + Math.PI / 2;
+
+      // Stone base course.
+      ctx.batcher.addTransformed('stone.pale', Primitives.boxBase, { x, y: 0, z }, meshRotation, {
+        x: width,
+        y: 0.85,
+        z: 0.5,
+      });
+      // Timber above it, with a little height variation so the ring is not a
+      // perfectly flat extrusion.
+      const top = 1.7 + ((i * 7) % 3) * 0.12;
+      ctx.batcher.addTransformed('wood.warm', Primitives.boxBase, { x, y: 0.85, z }, meshRotation, {
+        x: width,
+        y: top,
+        z: 0.38,
+      });
+      // Capping rail.
+      ctx.batcher.addTransformed(
+        'wood.crate',
+        Primitives.boxBase,
+        { x, y: 0.85 + top, z },
+        meshRotation,
+        { x: width, y: 0.16, z: 0.52 },
+      );
+
+      ctx.collision.addBox({
+        x,
+        z,
+        hx: width * 0.5,
+        hz: 0.3,
+        rotation: colliderRotation,
+        baseY: 0,
+        height: 0.85 + top + 0.16,
+        impactColor: 0xc9b79a,
+      });
+    }
+
+    // A lamp on each side of every opening, so the way out reads at a glance.
+    for (const gate of gates) {
+      for (const side of [-1, 1] as const) {
+        const a = gate.angle + side * (gate.gap + 0.035);
+        buildLampPost(ctx, Math.cos(a) * WALL_RADIUS, Math.sin(a) * WALL_RADIUS);
+      }
     }
   }
 
@@ -502,6 +629,21 @@ export class Village {
   /** Perimeter ring positions, filtered to spots that are actually walkable. */
   private generateSpawnPoints(): void {
     this.spawnPoints.length = 0;
+
+    // --- Inside the wall -----------------------------------------------------
+    // The plaza is sealed at the start, so it needs its own approaches or the
+    // first wave would have no way in. These sit in the gap between the kerb
+    // and the wall, which reads as the dead coming over it.
+    const innerRadius = (PLAZA_RADIUS + WALL_RADIUS) * 0.5;
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU + 0.11;
+      const x = Math.cos(a) * innerRadius;
+      const z = Math.sin(a) * innerRadius;
+      if (this.collision.isBlocked(x, z, 0.9, 0.6)) continue;
+      this.spawnPoints.push({ position: new THREE.Vector3(x, 0, z), zone: 'plaza' });
+    }
+
+    // --- Out in the districts ------------------------------------------------
     const rings = [
       { radius: 46, count: 16 },
       { radius: 54, count: 12 },
@@ -517,19 +659,27 @@ export class Village {
           if (Math.abs(x) > WORLD.halfSize - 5 || Math.abs(z) > WORLD.halfSize - 5) continue;
           if (this.collision.isBlocked(x, z, 1.0, 0.6)) continue;
           if (this.navGrid.isCellBlocked(x, z)) continue;
-          this.spawnPoints.push(new THREE.Vector3(x, 0, z));
+          this.spawnPoints.push({ position: new THREE.Vector3(x, 0, z), zone: nearestZone(a) });
           break;
         }
       }
     }
 
-    // Guarantee at least a few spawn points even if the layout changes.
+    // Guarantee the plaza always has somewhere to spawn, whatever the layout.
     if (this.spawnPoints.length < 6) {
       for (let i = 0; i < 8; i++) {
         const a = (i / 8) * TAU;
-        this.spawnPoints.push(new THREE.Vector3(Math.cos(a) * 40, 0, Math.sin(a) * 40));
+        this.spawnPoints.push({
+          position: new THREE.Vector3(Math.cos(a) * innerRadius, 0, Math.sin(a) * innerRadius),
+          zone: 'plaza',
+        });
       }
     }
+  }
+
+  /** Re-reads the world after a barricade opens, so zombies path through it. */
+  rebuildNavigation(): void {
+    this.navGrid.bake(this.collision, 0.62);
   }
 
   /** Contact-shadow decal used under zombies when real shadows are off. */

@@ -71,6 +71,7 @@ export class Player {
   private readonly right = new THREE.Vector3();
   private readonly wishDirection = new THREE.Vector3();
   private readonly previousPosition = new THREE.Vector3();
+  private readonly _facing = new THREE.Vector3();
 
   onDamage: ((event: DamageEvent) => void) | null = null;
   onDeath: (() => void) | null = null;
@@ -121,6 +122,17 @@ export class Player {
 
   get eyePosition(): THREE.Vector3 {
     return this.camera.position;
+  }
+
+  /**
+   * Unit vector the player faces on the horizontal plane.
+   *
+   * Derived from yaw rather than returning the movement `forward` field, which
+   * only refreshes while the player is actually moving — a stationary player
+   * looking around would otherwise report a stale direction.
+   */
+  get forwardVector(): THREE.Vector3 {
+    return this._facing.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
   }
 
   // -------------------------------------------------------------------------

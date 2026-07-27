@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import zombieModelUrl from '../assets/zombie.glb';
 import { applyStylizedShading } from '../textures/StylizedMaterial';
@@ -92,7 +93,12 @@ export function loadZombieModel(): Promise<ZombieTemplate> {
   if (templatePromise) return templatePromise;
 
   templatePromise = new Promise<ZombieTemplate>((resolve, reject) => {
-    new GLTFLoader().load(
+    const loader = new GLTFLoader();
+    // The model is decimated and meshopt-compressed; without the decoder it
+    // will not parse at all.
+    loader.setMeshoptDecoder(MeshoptDecoder);
+
+    loader.load(
       zombieModelUrl,
       (gltf) => {
         const scene = gltf.scene;
@@ -239,6 +245,13 @@ export class GlbZombieVisual implements ZombieVisual {
   private readonly materials: THREE.MeshStandardMaterial[] = [];
   private readonly baseEmissive: THREE.Color[] = [];
   private readonly meshes: THREE.Mesh[] = [];
+  /**
+   * Meshes worth dropping once a zombie is far enough away. The eyes are only
+   * a couple of hundred triangles but they cost a whole draw call each, and
+   * with a full wave on screen that is forty calls spent on something a few
+   * pixels across.
+   */
+  private readonly detailMeshes: THREE.Mesh[] = [];
 
   private readonly restPelvisY: number;
   private normalizeScale = 1;
@@ -290,9 +303,23 @@ export class GlbZombieVisual implements ZombieVisual {
       this.meshes.push(mesh);
 
       const source = mesh.material as THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[];
+      // Identified by material name rather than by index: the order meshes
+      // come back from traverse() is not something to rely on.
+      const first = Array.isArray(source) ? source[0] : source;
+      if (first?.name?.toLowerCase().includes('eye')) this.detailMeshes.push(mesh);
       const list = Array.isArray(source) ? source : [source];
       const cloned = list.map((material) => {
         const copy = material.clone() as THREE.MeshStandardMaterial;
+        // The source meshes are authored double-sided, which doubles the
+        // fragment work for backfaces no one can ever see on a closed body.
+        // With 40 zombies on screen that is the cheapest win available.
+        copy.side = THREE.FrontSide;
+        // Normal and specular maps cost three extra texture fetches per
+        // fragment and contribute almost nothing under banded toon shading on
+        // a body this small on screen.
+        copy.normalMap = null;
+        copy.roughnessMap = null;
+        copy.metalnessMap = null;
         // Cold rim so the zombies never look lit by the village's warm sunset.
         applyStylizedShading(copy, {
           rimColor: 0xa8d8ff,
@@ -416,6 +443,9 @@ export class GlbZombieVisual implements ZombieVisual {
   }
 
   resetPose(): void {
+    // A pooled body may have been recycled from a distant LOD.
+    for (const mesh of this.detailMeshes) mesh.visible = true;
+    this.lod = 0;
     for (const rig of this.bones.values()) rig.bone.quaternion.copy(rig.restQuaternion);
     const pelvis = this.bones.get('pelvis');
     if (pelvis) pelvis.bone.position.y = this.restPelvisY;
@@ -649,13 +679,17 @@ export class GlbZombieVisual implements ZombieVisual {
   }
 
   setLod(level: number): void {
+    if (this.lod === level) return;
     this.lod = level;
+    const showDetail = level === 0;
+    for (const mesh of this.detailMeshes) mesh.visible = showDetail;
   }
 
   dispose(): void {
     for (const material of this.materials) material.dispose();
     this.materials.length = 0;
     this.meshes.length = 0;
+    this.detailMeshes.length = 0;
     this.bones.clear();
   }
 }

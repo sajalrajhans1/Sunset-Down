@@ -3,6 +3,8 @@ import { settings, type GraphicsPreset } from '../game/Settings';
 export interface GovernorTargets {
   /** Called with the render scale to apply, 0.5 .. 1.0 of the quality cap. */
   onRenderScale: (scale: number) => void;
+  /** Called with the fraction of the preset's zombie cap to allow, 0.5 .. 1. */
+  onCrowdBudget: (fraction: number) => void;
   /** Called when the governor decides the whole preset must drop. */
   onPresetChange: (preset: GraphicsPreset) => void;
 }
@@ -18,7 +20,13 @@ const PRESET_ORDER: GraphicsPreset[] = ['low', 'medium', 'high', 'ultra'];
  *     buffer. Cheap to change, reversible, and by far the biggest single win
  *     because almost everything here is fragment-bound (bloom, the grade pass,
  *     the ground). Adjusted gently, in small steps.
- *  2. **Graphics preset** — only after render scale has bottomed out and the
+ *  2. **Crowd budget** — a cap on how many zombies may be active at once.
+ *     Measured on this scene, the zombies are around 90% of the triangles and
+ *     well over half the draw calls, so when a machine is vertex- or
+ *     draw-call-bound rather than fragment-bound, resolution alone will never
+ *     rescue it. Thinning the horde is the only lever that touches that cost,
+ *     and a slightly smaller wave is far less noticeable than a blurry screen.
+ *  3. **Graphics preset** — only after the first two have bottomed out and the
  *     frame time is *still* bad. This is a visible change, so it needs strong
  *     evidence before firing.
  *
@@ -34,6 +42,10 @@ export class PerformanceGovernor {
   private renderScale = 1;
   private static readonly MIN_SCALE = 0.55;
   private static readonly MAX_SCALE = 1;
+
+  /** Current fraction of the preset's zombie cap that may be active. */
+  private crowdBudget = 1;
+  private static readonly MIN_CROWD = 0.5;
 
   /** Frame-time budgets in milliseconds. */
   private static readonly TARGET_MS = 16.7;
@@ -63,6 +75,10 @@ export class PerformanceGovernor {
     return this.renderScale;
   }
 
+  get currentCrowdBudget(): number {
+    return this.crowdBudget;
+  }
+
   update(dt: number, frameMs: number): void {
     if (!this.enabled) return;
 
@@ -90,9 +106,20 @@ export class PerformanceGovernor {
     }
   }
 
+  /**
+   * Median frame time, computed into a reused buffer. This runs every frame
+   * once the window is full, and allocating a fresh 45-element array each time
+   * would be the governor itself generating the collection pauses it exists to
+   * smooth out.
+   */
+  private readonly sortScratch: number[] = [];
+
   private median(): number {
-    const sorted = [...this.samples].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
+    const scratch = this.sortScratch;
+    scratch.length = 0;
+    for (let i = 0; i < this.samples.length; i++) scratch.push(this.samples[i]);
+    scratch.sort((a, b) => a - b);
+    return scratch[Math.floor(scratch.length / 2)];
   }
 
   private stepDown(median: number): void {
@@ -108,7 +135,17 @@ export class PerformanceGovernor {
       return;
     }
 
-    // Resolution is already at the floor. Drop the preset, but only after
+    // Resolution is at the floor and it still isn't enough, which means the
+    // bottleneck is not fragment work. Thin the horde before touching the
+    // preset: it is the larger win here and the smaller visual change.
+    if (this.crowdBudget > PerformanceGovernor.MIN_CROWD) {
+      this.crowdBudget = Math.max(PerformanceGovernor.MIN_CROWD, this.crowdBudget - step);
+      this.targets.onCrowdBudget(this.crowdBudget);
+      this.afterChange();
+      return;
+    }
+
+    // Both cheap levers are exhausted. Drop the preset, but only after
     // several consecutive bad readings — this one is visible to the player.
     this.downgradeStreak++;
     if (this.downgradeStreak < 3) {
@@ -129,6 +166,13 @@ export class PerformanceGovernor {
 
   private stepUp(): void {
     this.downgradeStreak = 0;
+    // Give the crowd back first: a full wave matters more than a sharp one.
+    if (this.crowdBudget < 1) {
+      this.crowdBudget = Math.min(1, this.crowdBudget + 0.05);
+      this.targets.onCrowdBudget(this.crowdBudget);
+      this.afterChange();
+      return;
+    }
     if (this.renderScale >= PerformanceGovernor.MAX_SCALE) return;
     // Recover slowly: it's far better to sit slightly soft than to oscillate.
     this.renderScale = Math.min(PerformanceGovernor.MAX_SCALE, this.renderScale + 0.04);

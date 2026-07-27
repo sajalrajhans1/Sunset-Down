@@ -2,11 +2,13 @@ import * as THREE from 'three';
 
 import { ECONOMY } from './Config';
 import { PlayerStats } from './PlayerStats';
-import { settings, detectRecommendedPreset, type QualityProfile } from './Settings';
+import { settings, detectRecommendedPreset, type QualityProfile, QUALITY_PROFILES } from './Settings';
 
 import { Player } from '../components/Player';
 import type { Zombie } from '../components/Zombie';
 import { loadZombieModel } from '../components/GlbZombieVisual';
+import { loadBossModel } from '../components/GlbBossVisual';
+import { MapZones } from '../systems/MapZones';
 
 import { Village } from '../scenes/Village';
 
@@ -87,11 +89,19 @@ export class Game {
   /** Adaptive quality: keeps the frame rate playable on unknown hardware. */
   private readonly governor = new PerformanceGovernor({
     onRenderScale: (scale) => this.applyRenderScale(scale),
+    onCrowdBudget: (fraction) => this.applyCrowdBudget(fraction),
     onPresetChange: (preset) => settings.set('graphics', preset),
   });
   private renderScale = 1;
+  /**
+   * Fraction of the preset's zombie cap the governor currently allows. Kept so
+   * a later preset change re-derives capacity from the same budget rather than
+   * silently restoring a full-size horde on a machine that could not hold it.
+   */
+  private crowdBudget = 1;
 
   private lastCountdownBeep = -1;
+  private mapZones!: MapZones;
   /** Reused each frame so threat detection never allocates. */
   private readonly threatBuffer: ThreatCue[] = [];
   private threatWarnTimer = 0;
@@ -153,7 +163,19 @@ export class Game {
 
     this.ui.setLoadingProgress(0.2, 'Raising the rooftops');
     this.village = new Village(quality);
-    this.village.build(this.scene, quality);
+    this.mapZones = new MapZones({
+      spend: (amount) => this.economy.spend(amount),
+      canAfford: (amount) => this.economy.canAfford(amount),
+      ownsWeapon: (id) => this.weapons.has(id),
+      grantWeapon: (id) => {
+        this.weapons.grant(id, this.stats.toWeaponModifiers());
+        this.weapons.equipWeapon(id);
+        return true;
+      },
+      refillAmmo: () => this.weapons.refillAll(1),
+      onZoneOpened: (_id, name) => this.onZoneOpened(name),
+    });
+    this.village.build(this.scene, quality, this.mapZones);
     this.scene.add(this.village.group);
     await this.yieldFrame();
 
@@ -168,6 +190,12 @@ export class Game {
       console.warn('[Sunset Hollow] Zombie model failed to load, using fallback bodies:', error);
     }
     await this.yieldFrame();
+
+    // The boss is only needed from wave 5, so a slow download here should never
+    // hold up the first wave. Started now, awaited by nobody.
+    void loadBossModel().catch((error) => {
+      console.warn('[Sunset Hollow] Boss model failed to load, using fallback body:', error);
+    });
 
     this.ui.setLoadingProgress(0.7, 'Rousing the dead');
     this.zombies = new ZombieManager(quality.maxZombies);
@@ -364,6 +392,11 @@ export class Game {
 
     this.weapons.reset(this.stats.toWeaponModifiers());
 
+    // Shut every gate again and rebuild navigation around them, so a second
+    // run starts as sealed in as the first.
+    this.mapZones.reset();
+    this.village.rebuildNavigation();
+
     // Spawn in the middle of the plaza, facing the fairground.
     this.player.spawn(new THREE.Vector3(0, 0, 6), Math.PI);
     this.village.setProgress(1);
@@ -515,10 +548,45 @@ export class Game {
   // Wave + combat events
   // -------------------------------------------------------------------------
 
+  /**
+   * A barricade just came down.
+   *
+   * Navigation has to be rebuilt before anything else: until it is, the flow
+   * field still believes the gateway is a wall, and zombies would path around
+   * an opening the player just paid for.
+   */
+  private onZoneOpened(name: string): void {
+    this.village.rebuildNavigation();
+    this.ui.hud.showBanner(name, 'The way is open', 'normal');
+    this.postFx.flash(0.16, 0xffc861);
+    this.player.addShake(0.35);
+  }
+
+  /**
+   * Tightens or relaxes how many zombies may be active at once.
+   *
+   * Never goes below a floor that would make a wave feel empty — if the machine
+   * still cannot cope at that point, the governor moves on to dropping the
+   * graphics preset instead.
+   */
+  private applyCrowdBudget(fraction: number): void {
+    this.crowdBudget = fraction;
+    const preset = QUALITY_PROFILES[settings.current.graphics];
+    const capacity = Math.max(12, Math.round(preset.maxZombies * fraction));
+    this.zombies?.setCapacity(capacity);
+  }
+
   private spawnZombie(type: string, scaling: WaveScaling): boolean {
     if (this.zombies.isFull) return false;
 
-    const point = WaveSystem.chooseSpawnPoint(this.village.spawnPoints, this.player.position, 20, 80);
+    const point = WaveSystem.chooseSpawnPoint(
+      this.village.spawnPoints,
+      this.player.position,
+      // The plaza is always live; a district only wakes up once bought open.
+      (zone) => zone === 'plaza' || this.mapZones.isOpen(zone),
+      20,
+      80,
+    );
     if (!point) return false;
 
     const zombie = this.zombies.spawn({
@@ -729,6 +797,7 @@ export class Game {
     if (this.input.wasPressed('slot4')) this.weapons.equipIndex(3);
     if (this.input.wasPressed('slot5')) this.weapons.equipIndex(4);
     if (this.input.wheelDelta !== 0) this.weapons.cycle(Math.sign(this.input.wheelDelta));
+    if (this.input.wasPressed('interact')) this.mapZones.tryInteract();
     if (this.input.wasPressed('reload')) this.weapons.reloadActive();
     if (this.input.wasPressed('inspect')) this.weapons.activeWeapon?.inspect();
     if (this.input.wasPressed('shop')) {
@@ -789,6 +858,7 @@ export class Game {
     this.decals.update(dt);
     this.damageNumbers.update(dt);
     this.village.update(dt, this.player.camera.position);
+    this.mapZones.update(dt, this.player.position, this.player.forwardVector);
 
     // --- Audio -------------------------------------------------------------
     audio.updateListener(this.player.camera);
@@ -897,11 +967,15 @@ export class Game {
     const weapon = this.weapons.activeWeapon;
     const boss = this.zombies.findBoss();
 
-    let prompt: string | null = null;
-    if (this.waves.phase === 'prep' || this.waves.phase === 'cleared') {
-      prompt = 'Press <em>B</em> to open the shop';
-    } else if (weapon && weapon.isEmpty && !weapon.isReloading) {
-      prompt = weapon.reserveAmmo > 0 ? 'Press <em>R</em> to reload' : 'Out of ammo — switch weapons';
+    // Standing in front of a gate or a wall-buy outranks everything else: it
+    // is the only prompt tied to where the player physically is.
+    let prompt: string | null = this.mapZones.promptText;
+    if (prompt === null) {
+      if (this.waves.phase === 'prep' || this.waves.phase === 'cleared') {
+        prompt = 'Press <em>B</em> to open the shop';
+      } else if (weapon && weapon.isEmpty && !weapon.isReloading) {
+        prompt = weapon.reserveAmmo > 0 ? 'Press <em>R</em> to reload' : 'Out of ammo — switch weapons';
+      }
     }
 
     this.ui.hud.update(
@@ -1067,7 +1141,10 @@ export class Game {
     );
 
     this.village?.applyQuality(quality);
-    this.zombies?.setCapacity(quality.maxZombies);
+    // Through the budget, not straight from the preset: a governor-driven
+    // preset drop re-enters here, and reading maxZombies directly would hand
+    // a full-size horde back to the machine that just failed to render one.
+    this.applyCrowdBudget(this.crowdBudget);
     this.decals?.setCapacity(quality.maxDecals);
 
     this.postFx?.applyQuality(quality, this.scene, this.player.camera);

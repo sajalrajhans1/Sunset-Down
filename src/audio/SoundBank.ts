@@ -36,8 +36,10 @@ export interface GunSoundProfile {
  * Every sound effect in the game, synthesised on demand.
  *
  * Each method builds a tiny disposable node graph, schedules its envelope, and
- * lets it garbage collect when it ends. Modern browsers handle a few hundred
- * short-lived nodes per second comfortably.
+ * hands the chain to AudioCore.scheduleRelease so it is disconnected once it
+ * has gone quiet. Leaving that to the garbage collector is not good enough:
+ * nodes with tail time stay in the graph and keep being processed long after
+ * they are silent.
  */
 export class SoundBank {
   private listener: ListenerState = { x: 0, z: 0, forwardX: 0, forwardZ: -1 };
@@ -69,11 +71,15 @@ export class SoundBank {
     if (!position) {
       const gain = core.createGain(1);
       gain.connect(core.sfxBus);
+      const chain: AudioNode[] = [gain];
       if (reverb > 0) {
         const send = core.createGain(reverb);
         gain.connect(send);
         send.connect(core.reverbSend);
+        chain.push(send);
       }
+      // Same guarantee as the positional path: the chain tears itself down.
+      core.scheduleRelease(chain, 4);
       return gain;
     }
 
@@ -116,12 +122,11 @@ export class SoundBank {
 
     this.activeGunshots++;
     const totalLife = Math.max(profile.decay, profile.tail) * 1.9;
-    window.setTimeout(
-      () => {
-        this.activeGunshots = Math.max(0, this.activeGunshots - 1);
-      },
-      totalLife * 1000,
-    );
+    // Released off the shared audio sweep rather than its own timer, so
+    // sustained fire doesn't queue a setTimeout per round.
+    core.scheduleRelease([], totalLife, () => {
+      this.activeGunshots = Math.max(0, this.activeGunshots - 1);
+    });
 
     // Overlapping shots are quieter, which keeps the sum away from the limiter
     // and stops sustained fire from pumping the whole mix.
@@ -155,6 +160,7 @@ export class SoundBank {
 
     noise.start(t, Math.random() * 1.5);
     core.disposeAfter(noise, profile.decay + 0.05);
+    core.scheduleRelease([bandpass, highpass, drive, crackGain], profile.decay + 0.3);
 
     if (lean) return;
 
@@ -170,6 +176,7 @@ export class SoundBank {
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, t + profile.tail);
     bodyOsc.start(t);
     core.disposeAfter(bodyOsc, profile.tail + 0.05);
+    core.scheduleRelease([bodyGain], profile.tail + 0.3);
 
     // --- Tail --------------------------------------------------------------
     const tailNoise = core.createNoiseSource(0.6);
@@ -183,6 +190,7 @@ export class SoundBank {
     tailGain.gain.exponentialRampToValueAtTime(0.0001, t + profile.tail * 1.8);
     tailNoise.start(t, Math.random());
     core.disposeAfter(tailNoise, profile.tail * 1.8 + 0.05);
+    core.scheduleRelease([tailFilter, tailGain], profile.tail * 1.8 + 0.3);
   }
 
   /** Hammer falling on an empty chamber. */

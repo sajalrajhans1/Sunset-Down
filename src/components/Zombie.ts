@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ProceduralZombieVisual } from './ZombieModel';
 import { GlbZombieVisual, isZombieModelReady } from './GlbZombieVisual';
+import { GlbBossVisual, isBossModelReady } from './GlbBossVisual';
 import type { ZombieAnimationState, ZombieVisual } from './ZombieVisual';
 import { ZOMBIE_TYPES, type ZombieTypeDef, type ZombieTypeId } from './ZombieTypes';
 import type { NavGrid } from '../systems/NavGrid';
@@ -74,6 +75,7 @@ export class Zombie {
 
   /** Lazily built, then cached — most pooled entities only ever need one. */
   private glbVisual: GlbZombieVisual | null = null;
+  private bossVisual: GlbBossVisual | null = null;
   private proceduralVisual: ProceduralZombieVisual | null = null;
   private visual!: ZombieVisual;
 
@@ -140,15 +142,21 @@ export class Zombie {
 
   /**
    * Picks the renderable body for a class and parents it under the container.
-   * The boss keeps the stylised primitive rig; everything else uses the
-   * skinned character, falling back to the primitive rig if the model failed
-   * to load so a broken download can never break a wave.
+   *
+   * Bosses get the sculpted character mesh, everything else the skinned one.
+   * Either can fall back to the primitive rig if its model failed to download,
+   * so a bad network can never break a wave — the player just gets the
+   * stylised stand-in instead of nothing at all.
    */
   private selectVisual(def: ZombieTypeDef): ZombieVisual {
+    const wantsBoss = def.isBoss && isBossModelReady();
     const wantsGlb = !def.isBoss && isZombieModelReady();
 
     let next: ZombieVisual;
-    if (wantsGlb) {
+    if (wantsBoss) {
+      if (!this.bossVisual) this.bossVisual = new GlbBossVisual();
+      next = this.bossVisual;
+    } else if (wantsGlb) {
       if (!this.glbVisual) this.glbVisual = new GlbZombieVisual();
       next = this.glbVisual;
     } else {
@@ -161,6 +169,16 @@ export class Zombie {
       this.container.add(next.root);
       this.visual = next;
     }
+
+    // Only one boss is ever alive, but every pooled body that has *ever* been
+    // one would otherwise hold on to its own copy of the sculpted mesh and its
+    // materials for the rest of the run. Bosses come round once every five
+    // waves, so rebuilding one is far cheaper than keeping dozens resident.
+    if (!wantsBoss && this.bossVisual) {
+      this.bossVisual.dispose();
+      this.bossVisual = null;
+    }
+
     return next;
   }
 
