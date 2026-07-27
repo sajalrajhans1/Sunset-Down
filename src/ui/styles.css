@@ -2977,232 +2977,6 @@ body {
 }
 
 /* =========================================================================
-   Monthly leaderboard
-   ========================================================================= */
-
-/* Two columns on the menu: identity and actions on the left, standings on
-   the right. Collapses to one column when there isn't room for both. */
-.sh-menu__layout {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(24px, 4vw, 64px);
-  width: 100%;
-  height: 100%;
-  padding: 4vh clamp(20px, 5vw, 72px);
-  box-sizing: border-box;
-}
-
-.sh-menu__board {
-  flex: 0 1 420px;
-  min-width: 0;
-  max-height: 76vh;
-  display: flex;
-}
-
-@media (max-width: 1080px), (max-height: 620px) {
-  /* Below this the board would squeeze the title, and the menu reads better
-     as a single column with the standings dropped. */
-  .sh-menu__board {
-    display: none;
-  }
-}
-
-.sh-board {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  min-height: 0;
-  padding: 22px 22px 18px;
-  border-radius: var(--sh-radius-lg);
-  border: 1px solid var(--sh-panel-border);
-  background: var(--sh-panel);
-  box-shadow: var(--sh-shadow-md);
-  backdrop-filter: blur(14px);
-}
-
-.sh-board__header {
-  margin-bottom: 14px;
-}
-
-.sh-board__title {
-  margin: 0;
-  font-family: var(--sh-font-display);
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--sh-gold-bright);
-}
-
-.sh-board__subtitle {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  letter-spacing: 0.04em;
-  color: var(--sh-text-faint);
-}
-
-.sh-board__columns,
-.sh-board__row {
-  display: grid;
-  /* rank | survivor | wave | kills | time */
-  grid-template-columns: 28px 1fr 46px 56px 52px;
-  gap: 8px;
-  align-items: center;
-}
-
-.sh-board__columns {
-  padding: 0 10px 8px;
-  border-bottom: 1px solid rgba(255, 200, 97, 0.14);
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--sh-text-faint);
-}
-
-.sh-board__col--wave,
-.sh-board__col--kills,
-.sh-board__col--time {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.sh-board__list {
-  flex: 1;
-  min-height: 0;
-  margin: 0;
-  padding: 6px 0 0;
-  list-style: none;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 200, 97, 0.3) transparent;
-}
-
-.sh-board__list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sh-board__list::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(255, 200, 97, 0.3);
-}
-
-.sh-board__row {
-  padding: 7px 10px;
-  border-radius: var(--sh-radius-sm);
-  font-size: 13.5px;
-  color: var(--sh-text-dim);
-  transition: background 0.18s var(--sh-ease-out);
-}
-
-.sh-board__row:nth-child(odd) {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.sh-board__col--rank {
-  font-weight: 800;
-  color: var(--sh-text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Top three earn a little colour; everything below stays quiet. */
-.sh-board__row.is-podium .sh-board__col--rank { color: var(--sh-gold); }
-.sh-board__row.is-rank-1 .sh-board__col--rank { color: #ffd76a; }
-.sh-board__row.is-rank-2 .sh-board__col--rank { color: #d8d8e4; }
-.sh-board__row.is-rank-3 .sh-board__col--rank { color: #e0a071; }
-
-.sh-board__row.is-rank-1 .sh-board__name {
-  color: var(--sh-gold-bright);
-  font-weight: 800;
-}
-
-/* The player's own freshly submitted row. */
-.sh-board__row.is-mine {
-  background: rgba(255, 200, 97, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(255, 200, 97, 0.32);
-}
-
-.sh-board__col--name {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.sh-board__flag {
-  flex: none;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.sh-board__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--sh-text);
-}
-
-.sh-board__col--wave {
-  font-weight: 800;
-  color: var(--sh-cyan);
-}
-
-.sh-board__empty {
-  padding: 26px 12px;
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--sh-text-faint);
-}
-
-.sh-board__note {
-  display: none;
-  margin: 10px 0 0;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--sh-text-faint);
-}
-
-.sh-board__note.is-visible {
-  display: block;
-}
-
-/* Placeholder rows while the first fetch is in flight. */
-.sh-board__row--skeleton {
-  height: 31px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.09) 50%,
-    rgba(255, 255, 255, 0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: sh-board-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes sh-board-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sh-board__row--skeleton { animation: none; }
-}
-
-/* --- Compact variant, used on the game over screen ---------------------- */
-
-.sh-board--compact {
-  margin-top: 18px;
-  padding: 16px 16px 12px;
-  background: rgba(0, 0, 0, 0.18);
-  backdrop-filter: none;
-}
-
-.sh-board--compact .sh-board__title { font-size: 16px; }
-.sh-board--compact .sh-board__list { overflow: visible; }
-
-/* =========================================================================
    Score submission
    ========================================================================= */
 
@@ -3268,3 +3042,357 @@ body {
 .sh-submit__status.is-success { color: var(--sh-mint); }
 .sh-submit__status.is-error { color: var(--sh-red); }
 .sh-submit__status.is-info { color: var(--sh-text-dim); }
+
+/* =========================================================================
+   Monthly leaderboard
+
+   The visual weight is deliberately all on the wave number, because that is
+   the figure players actually compare. Kills and time are set smaller and
+   dimmer so scanning the board reads as one column of waves.
+   ========================================================================= */
+
+/* Two columns on the menu: identity and actions on the left, standings on the
+   right. Collapses to one column when there isn't room for both. */
+.sh-menu__layout {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(24px, 4vw, 60px);
+  width: 100%;
+  height: 100%;
+  padding: 4vh clamp(20px, 4vw, 64px);
+  box-sizing: border-box;
+}
+
+.sh-menu__board {
+  flex: 0 1 470px;
+  min-width: 0;
+  max-height: 82vh;
+  display: flex;
+}
+
+@media (max-width: 1180px), (max-height: 640px) {
+  /* Below this the board squeezes the title, and the menu reads better as a
+     single column with the standings dropped. */
+  .sh-menu__board { display: none; }
+}
+
+.sh-board {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  border-radius: var(--sh-radius-lg);
+  border: 1px solid var(--sh-panel-border);
+  background: linear-gradient(180deg, rgba(42, 23, 64, 0.94), rgba(23, 13, 38, 0.96));
+  box-shadow: var(--sh-shadow-lg), inset 0 1px 0 var(--sh-panel-highlight);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+/* --- Hero banner --------------------------------------------------------- */
+
+.sh-board__hero {
+  position: relative;
+  padding: 0 22px 16px;
+  /* Tall enough for the hero silhouette to read, short enough to leave the
+     standings the majority of the panel. */
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  isolation: isolate;
+}
+
+.sh-board__hero-art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  /* Biased right so the hero and the horde stay in frame as the panel
+     narrows, leaving the open sky on the left under the title. */
+  background-position: 68% 32%;
+  z-index: -2;
+}
+
+/* Fades the art into the panel so there is no hard seam above row one. */
+.sh-board__hero-fade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(23, 13, 38, 0.15) 0%, rgba(23, 13, 38, 0.55) 46%, rgba(23, 13, 38, 0.97) 100%),
+    linear-gradient(90deg, rgba(23, 13, 38, 0.82) 0%, rgba(23, 13, 38, 0.25) 52%, transparent 78%);
+}
+
+.sh-board__eyebrow {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--sh-gold);
+  text-shadow: 0 2px 8px rgba(9, 4, 18, 0.9);
+}
+
+.sh-board__title {
+  margin: 4px 0 0;
+  font-family: var(--sh-font-display);
+  font-size: clamp(20px, 2.1vw, 25px);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--sh-cream);
+  text-shadow: 0 2px 14px rgba(9, 4, 18, 0.95), 0 0 30px rgba(255, 138, 61, 0.3);
+}
+
+.sh-board__subtitle {
+  margin: 5px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--sh-text-dim);
+  text-shadow: 0 1px 6px rgba(9, 4, 18, 0.9);
+}
+
+/* --- Column headings ----------------------------------------------------- */
+
+.sh-board__columns,
+.sh-board__row {
+  display: grid;
+  /* rank | survivor | wave | kills | time */
+  grid-template-columns: 34px 1fr 48px 54px 50px;
+  gap: 8px;
+  align-items: center;
+}
+
+.sh-board__columns {
+  padding: 0 20px 7px;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__col--wave,
+.sh-board__col--kills,
+.sh-board__col--time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Rows ---------------------------------------------------------------- */
+
+.sh-board__list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 12px;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 200, 97, 0.28) transparent;
+}
+
+.sh-board__list::-webkit-scrollbar { width: 6px; }
+.sh-board__list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 200, 97, 0.28);
+}
+
+.sh-board__row {
+  position: relative;
+  padding: 9px 8px;
+  border-radius: var(--sh-radius-sm);
+  font-size: 13.5px;
+  color: var(--sh-text-dim);
+  animation: sh-board-in 0.42s var(--sh-ease-out) backwards;
+  transition: background 0.18s var(--sh-ease-out);
+}
+
+@keyframes sh-board-in {
+  from { opacity: 0; transform: translateY(9px); }
+  to { opacity: 1; transform: none; }
+}
+
+.sh-board__row + .sh-board__row {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.sh-board__row:hover { background: rgba(255, 255, 255, 0.05); }
+
+.sh-board__col--rank {
+  font-weight: 800;
+  font-size: 12.5px;
+  color: var(--sh-text-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sh-board__medal {
+  font-size: 17px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
+}
+
+/* Podium rows get a tinted plate so the top three read before anything else. */
+.sh-board__row.is-podium { padding: 11px 8px; }
+
+.sh-board__row.is-rank-1 {
+  background: linear-gradient(90deg, rgba(255, 200, 97, 0.17), rgba(255, 200, 97, 0.02));
+  box-shadow: inset 0 0 0 1px rgba(255, 200, 97, 0.28);
+}
+.sh-board__row.is-rank-2 {
+  background: linear-gradient(90deg, rgba(216, 216, 228, 0.11), transparent);
+}
+.sh-board__row.is-rank-3 {
+  background: linear-gradient(90deg, rgba(224, 160, 113, 0.11), transparent);
+}
+
+.sh-board__row.is-rank-1 .sh-board__name {
+  color: var(--sh-gold-bright);
+  font-weight: 800;
+}
+.sh-board__row.is-rank-1 .sh-board__wave-num {
+  color: var(--sh-gold-bright);
+  text-shadow: 0 0 16px rgba(255, 200, 97, 0.55);
+}
+
+/* The player's own freshly submitted row. */
+.sh-board__row.is-mine {
+  background: linear-gradient(90deg, rgba(95, 216, 255, 0.18), rgba(95, 216, 255, 0.03));
+  box-shadow: inset 0 0 0 1px rgba(95, 216, 255, 0.4);
+}
+
+.sh-board__you {
+  flex: none;
+  padding: 1px 6px 2px;
+  border-radius: 999px;
+  background: rgba(95, 216, 255, 0.22);
+  color: var(--sh-cyan);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sh-board__col--name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sh-board__flag { flex: none; font-size: 15px; line-height: 1; }
+
+.sh-board__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sh-text);
+  font-weight: 700;
+}
+
+/* The number everyone is actually competing on. */
+.sh-board__wave-num {
+  font-family: var(--sh-font-display);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--sh-cyan);
+  line-height: 1;
+}
+
+.sh-board__col--kills,
+.sh-board__col--time {
+  font-size: 12px;
+  color: var(--sh-text-faint);
+}
+
+/* --- Empty / error ------------------------------------------------------- */
+
+.sh-board__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 30px 22px 34px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__empty strong {
+  font-family: var(--sh-font-display);
+  font-size: 15px;
+  color: var(--sh-gold-bright);
+}
+
+.sh-board__empty-mark {
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+}
+
+/* --- Footer -------------------------------------------------------------- */
+
+.sh-board__footer {
+  padding: 10px 20px 13px;
+  border-top: 1px solid rgba(255, 200, 97, 0.12);
+}
+
+.sh-board__count {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__note {
+  display: none;
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sh-text-faint);
+}
+
+.sh-board__note.is-visible { display: block; }
+
+/* Placeholder rows while the first fetch is in flight. */
+.sh-board__row--skeleton {
+  height: 34px;
+  margin: 3px 0;
+  border-radius: var(--sh-radius-sm);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.035) 25%,
+    rgba(255, 255, 255, 0.085) 50%,
+    rgba(255, 255, 255, 0.035) 75%
+  );
+  background-size: 200% 100%;
+  animation: sh-board-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes sh-board-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-board__row--skeleton { animation: none; }
+  .sh-board__row { animation: none; }
+}
+
+/* --- Compact variant, used on the game over screen ----------------------- */
+
+.sh-board--compact {
+  margin-top: 18px;
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: none;
+}
+
+.sh-board--compact .sh-board__hero { min-height: 96px; padding-bottom: 12px; }
+.sh-board--compact .sh-board__title { font-size: 17px; }
+.sh-board--compact .sh-board__eyebrow { font-size: 9.5px; }
+.sh-board--compact .sh-board__list { overflow: visible; }
+.sh-board--compact .sh-board__footer { display: none; }
