@@ -13,18 +13,6 @@ export interface ZombieAnimationState {
   elapsed: number;
   /** 0..1 ground speed relative to this zombie's own top speed. */
   stride: number;
-  /** Ground speed in metres per second, absolute. */
-  speed: number;
-  /**
-   * 0..1 blend from a walk cycle to a run cycle.
-   *
-   * Distinct from `stride`, which is normalised against each class's own top
-   * speed — so a shambler plodding at its maximum and a sprinter flat out both
-   * report a stride of 1 and would animate identically. This is derived from
-   * absolute speed instead, which is what actually decides whether a body is
-   * walking or running.
-   */
-  run: number;
   /** Continuously advancing walk-cycle phase, in radians. */
   gaitPhase: number;
   /** Seconds remaining in the attack windup; 0 when not winding up. */

@@ -37,14 +37,6 @@ interface Entry {
 const rankOf = (wave: number, kills: number): number =>
   wave * 1_000_000 + Math.min(kills, 999_999);
 
-/**
- * How many different players may share one name in a month.
- *
- * Genuine collisions on common names are expected and allowed; this only stops
- * someone papering the board with a single name from a script.
- */
-const MAX_PER_NAME = 3;
-
 export default async function handler(request: Request): Promise<Response> {
   if (!isConfigured()) return json({ configured: false, entries: [], month: boardLabel() });
 
@@ -104,56 +96,75 @@ async function submit(request: Request): Promise<Response> {
 
   const { name, wave, kills, timeSurvived } = check.claim;
   const key = boardKey();
-  const bestKey = `${key}:best`;
-  const namesKey = `${key}:names`;
+  const playerKey = `${key}:player`;
   const score = rankOf(wave, kills);
+  const nameKey = name.toLowerCase();
 
   /**
-   * Players are identified by the anonymous id their browser generated, never
-   * by the name they typed.
+   * One name, one row. One player, one row.
    *
-   * Names are free text and collide constantly — "Sam", "Alex", "pro" — and
-   * keying on them would mean two strangers sharing a name are treated as one
-   * player: the second either gets told their run "isn't a personal best", or
-   * replaces the first person's entry outright. Keying on the client means
-   * both keep their own row and the board simply shows the name twice.
+   * Both halves matter and neither alone is enough. Keying on the name alone
+   * lets a player who renames leave a ghost entry behind; keying on the
+   * browser alone lets the same person hold two rows under the same name,
+   * which is what happened when this endpoint changed its mind about which of
+   * the two was the identity.
    *
-   * Falls back to the name when no id is supplied, which keeps older clients
-   * from posting an unbounded number of rows.
+   * So rather than trusting bookkeeping to have been correct, the board itself
+   * is the source of truth: read it, drop anything that is this player or this
+   * name, then insert. That makes the invariant self-healing - rows left over
+   * from an older scheme are cleaned up the first time their owner plays
+   * again, with no migration to run.
+   *
+   * The consequence, deliberately: two different people who both call
+   * themselves "Sam" share one row, and the better run holds it. That is what
+   * one-name-one-entry means, and the loser is told to pick another name.
    */
   const rawClient = (body as { client?: unknown }).client;
-  const playerKey =
-    typeof rawClient === 'string' && /^[a-f0-9]{32}$/.test(rawClient)
-      ? `c:${rawClient}`
-      : `n:${name.toLowerCase()}`;
+  const clientId =
+    typeof rawClient === 'string' && /^[a-f0-9]{32}$/.test(rawClient) ? rawClient : null;
 
-  // Keep only each player's best run for the month. Without this a single
-  // player grinding twenty runs would push everyone else off the board.
-  const previousRaw = await redis<string | null>('HGET', bestKey, playerKey);
-  if (previousRaw) {
+  // The name this player last held, so a rename does not orphan their old row.
+  const previousName = clientId
+    ? await redis<string | null>('HGET', playerKey, clientId)
+    : null;
+
+  const board = (await redis<string[]>('ZRANGE', key, 0, BOARD_SIZE - 1, 'REV')) ?? [];
+
+  let bestExisting: { member: string; score: number } | null = null;
+  const stale: string[] = [];
+
+  for (const member of board) {
+    let parsed: Entry;
     try {
-      const previous = JSON.parse(previousRaw) as Entry;
-      if (rankOf(previous.wave, previous.kills) >= score) {
-        return json({ configured: true, recorded: false, reason: 'not a personal best' });
-      }
-      await redis('ZREM', key, previousRaw);
+      parsed = JSON.parse(member) as Entry;
     } catch {
-      // Unparseable history is simply replaced.
+      continue;
     }
-  } else {
-    // A player new to this month claiming a name that is already in use. Real
-    // duplicates are fine and expected, but this is also the cheapest way to
-    // fill a board with one name, so allow a handful and no more.
-    const nameCount = await redis<number>('HINCRBY', namesKey, name.toLowerCase(), 1);
-    await redis('EXPIRE', namesKey, BOARD_TTL);
-    if (nameCount > MAX_PER_NAME) {
-      return json({
-        configured: true,
-        recorded: false,
-        reason: 'name already taken this month',
-      });
+    const owned = parsed.name.toLowerCase();
+    if (owned !== nameKey && owned !== previousName) continue;
+
+    stale.push(member);
+    const existing = rankOf(parsed.wave, parsed.kills);
+    // Only a row under the *same* name blocks a weaker submission. A row under
+    // the player's old name is being retired regardless.
+    if (owned === nameKey && (!bestExisting || existing > bestExisting.score)) {
+      bestExisting = { member, score: existing };
     }
   }
+
+  if (bestExisting && bestExisting.score >= score) {
+    // The run does not beat what this name already holds, so the existing row
+    // stays. Any *other* rows under it are still collapsed away: a board that
+    // is showing one person twice should be tidied up the next time they play,
+    // whether or not that particular run happened to be their best.
+    for (const member of stale) {
+      if (member !== bestExisting.member) await redis('ZREM', key, member);
+    }
+    if (clientId) await redis('HSET', playerKey, clientId, nameKey);
+    return json({ configured: true, recorded: false, reason: 'not a personal best' });
+  }
+
+  for (const member of stale) await redis('ZREM', key, member);
 
   const entry: Entry = {
     id: crypto.randomUUID().slice(0, 8),
@@ -167,11 +178,11 @@ async function submit(request: Request): Promise<Response> {
   const member = JSON.stringify(entry);
 
   await redis('ZADD', key, score, member);
-  await redis('HSET', bestKey, playerKey, member);
+  if (clientId) await redis('HSET', playerKey, clientId, nameKey);
   // Trim to the top N, then refresh both keys' lifetimes together.
   await redis('ZREMRANGEBYRANK', key, 0, -(BOARD_SIZE + 1));
   await redis('EXPIRE', key, BOARD_TTL);
-  await redis('EXPIRE', bestKey, BOARD_TTL);
+  await redis('EXPIRE', playerKey, BOARD_TTL);
 
   const rank = await redis<number | null>('ZREVRANK', key, member);
 

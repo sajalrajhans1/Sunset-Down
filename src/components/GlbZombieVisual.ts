@@ -472,67 +472,42 @@ export class GlbZombieVisual implements ZombieVisual {
     const wobble = def ? def.gaitWobble : 1;
     const phase = state.gaitPhase + state.phaseOffset;
     const stride = clamp01(state.stride);
-    // How much of a *run* this is rather than a walk. Driven by absolute speed,
-    // so it separates a sprinter from a shambler that merely happens to be at
-    // its own top speed - the two used to animate identically.
-    const run = clamp01(state.run);
 
     const swing = Math.sin(phase);
     const swing2 = Math.sin(phase * 2);
-    // Uneven drive between the legs reads instantly as a limp. A running body
-    // is committed to its stride, so the limp fades out as the pace rises.
-    const limp = 1 + swing * 0.16 * wobble * (1 - run * 0.8);
+    // Uneven drive between the legs reads instantly as a limp.
+    const limp = 1 + swing * 0.16 * wobble;
 
     // --- Legs --------------------------------------------------------------
     // Positive swing carries a limb forward whichever way it points, so the
     // two legs simply take opposite signs.
-    const legAmp = lerp(0.22, 0.85, stride) + run * 0.5;
+    const legAmp = lerp(0.22, 0.85, stride);
     this.rotate('thighL', 'swing', swing * legAmp * limp);
     this.rotate('thighR', 'swing', -swing * legAmp);
-
-    // Running drives the knee up in front rather than only swinging the leg
-    // through, which is most of what separates a run from a fast walk.
-    const kneeDrive = run * 0.55;
-    if (kneeDrive > 0.001) {
-      this.rotate('thighL', 'swing', Math.max(0, swing) * kneeDrive, true);
-      this.rotate('thighR', 'swing', Math.max(0, -swing) * kneeDrive, true);
-    }
-
     // A little stance width so the legs never scissor through each other.
-    // Runners bring their feet closer to the centre line.
-    const stance = lerp(0.07, 0.035, run);
-    this.rotate('thighL', 'spread', stance, true);
-    this.rotate('thighR', 'spread', -stance, true);
+    this.rotate('thighL', 'spread', 0.07, true);
+    this.rotate('thighR', 'spread', -0.07, true);
 
     // Knees only bend backward, and peak just after the leg passes under the
-    // hips - hence the phase offset rather than a raw half-wave. The trailing
-    // heel kicks much further up at a run.
-    const kneeAmp = lerp(0.35, 1.5, stride) + run * 0.85;
+    // hips - hence the phase offset rather than a raw half-wave.
+    const kneeAmp = lerp(0.35, 1.5, stride);
     this.rotate('calfL', 'swing', -Math.max(0, -Math.sin(phase + 0.9)) * kneeAmp);
     this.rotate('calfR', 'swing', -Math.max(0, Math.sin(phase + 0.9)) * kneeAmp);
 
-    // Ankles roll through the step, toes pointing more as the pace rises.
-    const ankle = 0.28 * stride + run * 0.25;
-    this.rotate('footL', 'swing', -swing * ankle);
-    this.rotate('footR', 'swing', swing * ankle);
+    // Ankles roll through the step.
+    this.rotate('footL', 'swing', -swing * 0.28 * stride);
+    this.rotate('footR', 'swing', swing * 0.28 * stride);
 
     // --- Hips + spine ------------------------------------------------------
     const pelvis = this.bones.get('pelvis');
     if (pelvis) {
-      // Walking bobs gently twice per cycle. Running adds a real flight phase:
-      // the body lifts off the drive leg and drops onto the next, which is what
-      // stops a fast gait reading as a skater with moving legs.
-      const walkBob = Math.abs(swing2) * 0.03 * stride * wobble - Math.max(0, swing) * 0.016 * wobble;
-      const airborne = run * (Math.abs(swing2) * 0.075 - 0.02);
-      pelvis.bone.position.y =
-        this.restPelvisY + (walkBob + airborne) / Math.max(0.001, this.orient.scale.y);
+      const bob = Math.abs(swing2) * 0.03 * stride * wobble - Math.max(0, swing) * 0.016 * wobble;
+      pelvis.bone.position.y = this.restPelvisY + bob / Math.max(0.001, this.orient.scale.y);
       this.rotate('pelvis', 'spread', -swing * 0.06 * wobble * stride);
-      // Hips counter-rotate against the shoulders at a run.
-      this.rotate('pelvis', 'lift', swing * 0.1 * run, true);
     }
 
     // Forward lean grows with speed; sprinting zombies pitch right over.
-    const lean = lerp(0.05, 0.4, stride) + run * 0.3;
+    const lean = lerp(0.05, 0.4, stride);
     this.rotate('spine', 'swing', lean * 0.42);
     this.rotate('spine1', 'swing', lean * 0.3);
     this.rotate('spine2', 'swing', lean * 0.2);
@@ -559,7 +534,7 @@ export class GlbZombieVisual implements ZombieVisual {
     } else if (state.isAttacking) {
       this.poseAttacking(state);
     } else {
-      this.poseArmsRunning(swing, stride, wobble, run);
+      this.poseArmsRunning(swing, stride, wobble);
     }
   }
 
@@ -570,33 +545,23 @@ export class GlbZombieVisual implements ZombieVisual {
    * A positive swing of ~1.2 rad brings them round to the front - which is
    * both the classic zombie reach and the base pose the run pumps around.
    */
-  /**
-   * Arms, blended between two quite different poses.
-   *
-   * A shambling zombie reaches forward - that outstretched silhouette is the
-   * whole visual shorthand for the genre. A running one cannot: arms held out
-   * in front at speed read as floating, not running. So the reach retracts and
-   * the arms move to a proper drive at the sides, elbows folded, swinging hard
-   * in opposition to the legs.
-   */
-  private poseArmsRunning(swing: number, stride: number, wobble: number, run: number): void {
-    // Reach forward when shambling, pull the elbows back when running.
-    const reach = lerp(lerp(0.95, 1.3, stride), 0.15, run);
-    const pump = swing * (lerp(0.1, 0.5, stride) + run * 0.85);
+  private poseArmsRunning(swing: number, stride: number, wobble: number): void {
+    // Shamblers hold their arms low and loose; sprinters carry them high.
+    const reach = lerp(0.95, 1.3, stride);
+    const pump = swing * lerp(0.1, 0.5, stride);
 
-    this.rotate('clavicleL', 'lift', 0.08 + run * 0.06);
-    this.rotate('clavicleR', 'lift', 0.08 + run * 0.06);
+    this.rotate('clavicleL', 'lift', 0.08);
+    this.rotate('clavicleR', 'lift', 0.08);
 
     // Arms swing in opposition to the legs.
     this.rotate('upperArmL', 'swing', reach + pump);
     this.rotate('upperArmR', 'swing', reach - pump);
-    // Raised toward horizontal when shambling; tucked to the ribs at a run.
-    const lift = lerp(lerp(-0.25, 0.12, stride), -0.5, run);
-    this.rotate('upperArmL', 'lift', lift + swing * 0.05 * wobble, true);
-    this.rotate('upperArmR', 'lift', lift - swing * 0.05 * wobble, true);
+    // Raise toward horizontal and tuck slightly inward as the pace rises.
+    this.rotate('upperArmL', 'lift', lerp(-0.25, 0.12, stride) + swing * 0.05 * wobble, true);
+    this.rotate('upperArmR', 'lift', lerp(-0.25, 0.12, stride) - swing * 0.05 * wobble, true);
 
-    // Elbows stay bent, folding toward a right angle at full pace.
-    const elbow = lerp(0.35, 0.95, stride) + run * 0.75;
+    // Elbows stay bent, tightening as the pace picks up.
+    const elbow = lerp(0.35, 0.95, stride);
     this.rotate('forearmL', 'swing', elbow + Math.max(0, pump) * 0.45);
     this.rotate('forearmR', 'swing', elbow + Math.max(0, -pump) * 0.45);
 
