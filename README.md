@@ -135,6 +135,23 @@ Creating the database directly at [upstash.com](https://upstash.com) instead wor
 
 For local development, copy `.env.example` to `.env.local` and fill it in. `npm run dev` serves the `api/` routes through a small Vite middleware, so the leaderboard works locally exactly as it does in production.
 
+### Usernames
+
+A name on the board belongs to whoever claimed it. Nobody else can post under
+it, so two players called "Sam" no longer fight over one row, and a stranger
+with a better score can never take yours.
+
+Ownership is anchored to an anonymous id the browser generates once - there are
+no accounts, no email, no password. Claiming happens on your first submitted
+run rather than in a separate reservation step, which also means a name cannot
+be squatted from a script without playing the game first.
+
+The gap that leaves is a player who clears their site data or moves to another
+machine. Settings shows a short recovery code for the name you hold; entering
+it on another computer re-points the name at that browser. Names are permanent
+and do not reset with the monthly scores - losing your name to a stranger every
+month would be worse than the collisions it replaces.
+
 ### How the board is stored
 
 One Redis sorted set per calendar month, keyed `lb:2026-07`. The "monthly reset" isn't a scheduled job that could fail — it's just the calendar rolling on to a key that doesn't exist yet. Old months sit untouched under their own keys until a 70-day TTL clears them.

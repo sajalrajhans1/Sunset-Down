@@ -83,6 +83,72 @@ export class Leaderboard {
   }
 
   // -------------------------------------------------------------------------
+  // Username ownership
+  // -------------------------------------------------------------------------
+
+  /**
+   * Asks whether a name is free.
+   *
+   * `available` is true when nobody holds it *or* when the holder is this
+   * browser, so the caller can treat "your own name" and "an unused name" the
+   * same way. A network failure reports available: refusing to let someone
+   * submit because a check timed out would be worse than letting the server
+   * make the final call on submit.
+   */
+  async checkName(name: string): Promise<{ available: boolean; mine: boolean }> {
+    const cleaned = sanitiseName(name).trim();
+    if (!cleaned) return { available: false, mine: false };
+
+    const query = `?name=${encodeURIComponent(cleaned)}&client=${this.playerId}`;
+    const result = await this.request<{ available: boolean; mine: boolean }>(
+      `/api/username${query}`,
+    );
+    if (!result) return { available: true, mine: false };
+    return { available: !!result.available, mine: !!result.mine };
+  }
+
+  /** Fetches this player's recovery code for the name they own. */
+  async recoveryCode(name: string): Promise<string | null> {
+    const cleaned = sanitiseName(name).trim();
+    if (!cleaned) return null;
+    const result = await this.request<{ code?: string }>('/api/username', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'code', name: cleaned, client: this.playerId }),
+    });
+    return result?.code ?? null;
+  }
+
+  /**
+   * Moves a name this player owns onto this browser, using its code.
+   * This is the escape hatch for a new device or cleared site data.
+   */
+  async recoverUsername(
+    name: string,
+    code: string,
+  ): Promise<{ ok: boolean; name?: string; reason?: string }> {
+    const cleaned = sanitiseName(name).trim();
+    if (!cleaned) return { ok: false, reason: 'name required' };
+
+    const result = await this.request<{ recovered?: boolean; name?: string; error?: string }>(
+      '/api/username',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'recover', name: cleaned, code, client: this.playerId }),
+      },
+    );
+
+    if (!result) return { ok: false, reason: 'offline' };
+    if (result.error) return { ok: false, reason: result.error };
+    if (result.recovered) {
+      this.savedName = result.name ?? cleaned;
+      return { ok: true, name: this.savedName };
+    }
+    return { ok: false, reason: 'failed' };
+  }
+
+  // -------------------------------------------------------------------------
   // Run lifecycle
   // -------------------------------------------------------------------------
 

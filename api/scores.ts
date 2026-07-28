@@ -3,6 +3,9 @@ import {
   BOARD_TTL,
   bodyTooLarge,
   boardKey,
+  makeRecoveryCode,
+  USERNAMES_KEY,
+  type UsernameRecord,
   boardLabel,
   consumeToken,
   countryOf,
@@ -122,6 +125,43 @@ async function submit(request: Request): Promise<Response> {
   const rawClient = (body as { client?: unknown }).client;
   const clientId =
     typeof rawClient === 'string' && /^[a-f0-9]{32}$/.test(rawClient) ? rawClient : null;
+
+  /**
+   * A name belongs to whoever claimed it first.
+   *
+   * This is what makes the board's names mean something: nobody else can post
+   * under yours, so a stranger can no longer take your row by out-scoring you,
+   * and you can no longer be shown twice. Claiming happens here rather than in
+   * a separate reservation step, so a name can only be taken by someone who
+   * has actually finished a run - which also means it cannot be squatted from
+   * a script without playing the game first.
+   */
+  if (clientId) {
+    const ownerRaw = await redis<string | null>('HGET', USERNAMES_KEY, nameKey);
+    let owner: UsernameRecord | null = null;
+    if (ownerRaw) {
+      try {
+        owner = JSON.parse(ownerRaw) as UsernameRecord;
+      } catch {
+        // A corrupt record should not permanently burn the name.
+        owner = null;
+      }
+    }
+
+    if (owner && owner.owner !== clientId) {
+      return json({ configured: true, recorded: false, reason: 'name taken' });
+    }
+
+    if (!owner) {
+      const record: UsernameRecord = {
+        owner: clientId,
+        code: makeRecoveryCode(),
+        display: name,
+        at: Date.now(),
+      };
+      await redis('HSET', USERNAMES_KEY, nameKey, JSON.stringify(record));
+    }
+  }
 
   // The name this player last held, so a rename does not orphan their old row.
   const previousName = clientId

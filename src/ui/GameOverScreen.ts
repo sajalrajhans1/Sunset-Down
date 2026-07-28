@@ -47,6 +47,9 @@ export class GameOverScreen {
   private readonly submitButton: HTMLButtonElement;
   private readonly submitStatus: HTMLElement;
   private pendingRun: { wave: number; kills: number; timeSurvived: number } | null = null;
+  private nameCheckTimer = 0;
+  /** Name the last availability request was for, so stale replies are ignored. */
+  private nameCheckFor = '';
 
   constructor(callbacks: GameOverCallbacks) {
     this.title = el('h2', { className: 'sh-gameover__title', text: 'Sun Down' });
@@ -72,6 +75,7 @@ export class GameOverScreen {
       const cleaned = sanitiseName(this.nameInput.value);
       if (cleaned !== this.nameInput.value) this.nameInput.value = cleaned;
       this.submitButton.disabled = cleaned.trim().length === 0;
+      this.queueAvailabilityCheck(cleaned.trim());
     });
     this.nameInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') void this.submitScore();
@@ -346,14 +350,10 @@ export class GameOverScreen {
       );
     } else if (result.global && result.reason === 'not a personal best') {
       this.setStatus('Your best run this month still stands.', 'info');
-    } else if (result.reason === 'name already taken this month') {
-      this.setStatus('Too many players are using that name — try another.', 'error');
+    } else if (result.reason === 'name taken') {
+      this.setStatus('That name belongs to another player — pick another.', 'error');
       // Let them pick again rather than stranding them on a dead form.
-      this.nameInput.disabled = false;
-      this.submitButton.disabled = false;
-      this.submitButton.textContent = 'Submit score';
-      this.nameInput.focus();
-      this.nameInput.select();
+      this.revealNameInput();
       return;
     } else if (result.reason === 'run already submitted') {
       this.setStatus('That run has already been submitted.', 'info');
@@ -365,6 +365,34 @@ export class GameOverScreen {
     this.board.setHighlight(null);
     void this.board.refresh(true);
     this.pendingRun = null;
+  }
+
+  /**
+   * Tells the player whether a name is free, while they are still typing it.
+   *
+   * Debounced, and replies for anything but the current text are dropped -
+   * without that, a slow response for "Sa" can land after a fast one for
+   * "Sajal" and label the wrong name as taken.
+   */
+  private queueAvailabilityCheck(name: string): void {
+    window.clearTimeout(this.nameCheckTimer);
+    if (!name) {
+      this.setStatus('', 'info');
+      return;
+    }
+
+    this.nameCheckTimer = window.setTimeout(async () => {
+      this.nameCheckFor = name;
+      const { available, mine } = await leaderboard.checkName(name);
+      if (this.nameCheckFor !== name) return;
+      if (this.nameInput.value.trim() !== name) return;
+
+      if (mine) this.setStatus(`${name} is yours.`, 'success');
+      else if (available) this.setStatus(`${name} is free.`, 'success');
+      else this.setStatus(`${name} is taken — pick another.`, 'error');
+
+      this.submitButton.disabled = !available;
+    }, 350);
   }
 
   private setStatus(message: string, kind: 'success' | 'error' | 'info'): void {

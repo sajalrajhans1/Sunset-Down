@@ -1,4 +1,5 @@
 import { button, el, segmented, slider, toggle } from './dom';
+import { leaderboard } from '../systems/Leaderboard';
 import { settings, type GraphicsPreset } from '../game/Settings';
 import { audio } from '../audio/AudioManager';
 
@@ -188,7 +189,13 @@ export class SettingsPanel {
         }),
         el('div', {
           className: 'sh-modal__body',
-          children: [audioSection, controlsSection, graphicsSection, interfaceSection],
+          children: [
+            audioSection,
+            controlsSection,
+            graphicsSection,
+            interfaceSection,
+            this.buildIdentitySection(),
+          ],
         }),
         el('div', {
           className: 'sh-modal__footer',
@@ -216,6 +223,112 @@ export class SettingsPanel {
     // Click-outside and Escape both dismiss.
     this.root.addEventListener('pointerdown', (event) => {
       if (event.target === this.root) this.close();
+    });
+  }
+
+  /**
+   * Your name on the leaderboard, and how to keep it.
+   *
+   * A username is held by the browser that claimed it, which is fine until the
+   * player clears their site data or sits down at a different machine - at
+   * which point, without this, their name is gone and owned by a browser they
+   * no longer have. The code is the way back. It lives here rather than being
+   * forced on them at claim time, because a "write this down" dialog after
+   * every first run is friction most players would ignore anyway.
+   */
+  private buildIdentitySection(): HTMLElement {
+    const name = leaderboard.savedName;
+
+    const codeValue = el('code', {
+      className: 'sh-identity__code',
+      text: name ? 'Show code' : '—',
+    });
+
+    const revealButton = button({
+      label: 'Show',
+      variant: 'ghost',
+      onClick: async () => {
+        if (!name) return;
+        codeValue.textContent = 'Checking…';
+        const code = await leaderboard.recoveryCode(name);
+        codeValue.textContent = code ?? 'Unavailable';
+      },
+    });
+
+    const restoreName = el('input', {
+      className: 'sh-submit__input',
+      attrs: { type: 'text', placeholder: 'Username', autocomplete: 'off', spellcheck: 'false' },
+    }) as HTMLInputElement;
+
+    const restoreCode = el('input', {
+      className: 'sh-submit__input',
+      attrs: { type: 'text', placeholder: 'Code', autocomplete: 'off', spellcheck: 'false' },
+    }) as HTMLInputElement;
+
+    const restoreStatus = el('p', { className: 'sh-submit__status' });
+
+    const restoreButton = button({
+      label: 'Restore',
+      onClick: async () => {
+        const result = await leaderboard.recoverUsername(restoreName.value, restoreCode.value);
+        if (result.ok) {
+          restoreStatus.textContent = `Welcome back, ${result.name}.`;
+          restoreStatus.className = 'sh-submit__status is-success';
+        } else {
+          restoreStatus.textContent =
+            result.reason === 'wrong code'
+              ? 'That code does not match.'
+              : result.reason === 'no such name'
+                ? 'No one has claimed that name.'
+                : 'Could not restore that name.';
+          restoreStatus.className = 'sh-submit__status is-error';
+        }
+      },
+    });
+
+    return el('div', {
+      children: [
+        el('h3', { className: 'sh-section-title', text: 'Leaderboard name' }),
+        el('div', {
+          className: 'sh-identity',
+          children: [
+            el('div', {
+              className: 'sh-identity__row',
+              children: [
+                el('span', { className: 'sh-identity__label', text: 'Your name' }),
+                el('strong', { className: 'sh-identity__name', text: name || 'Not set yet' }),
+              ],
+            }),
+            el('div', {
+              className: 'sh-identity__row',
+              children: [
+                el('span', { className: 'sh-identity__label', text: 'Recovery code' }),
+                el('span', {
+                  className: 'sh-identity__code-row',
+                  children: [codeValue, revealButton],
+                }),
+              ],
+            }),
+            el('p', {
+              className: 'sh-identity__hint',
+              text: name
+                ? 'Keep this somewhere safe. It moves your name to another computer, or back after clearing your browser data.'
+                : 'Finish a run and put a name on the board to claim one.',
+            }),
+            el('div', {
+              className: 'sh-identity__restore',
+              children: [
+                el('span', { className: 'sh-identity__label', text: 'Moving from another computer?' }),
+                el('div', {
+                  className: 'sh-identity__restore-row',
+                  children: [restoreName, restoreCode, restoreButton],
+                }),
+                restoreStatus,
+              ],
+            }),
+          ],
+        }),
+      ],
     });
   }
 

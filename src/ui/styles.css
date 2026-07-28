@@ -3489,3 +3489,74 @@ body {
 .sh-submit__change:focus-visible {
   color: var(--sh-gold);
 }
+
+/* =========================================================================
+   Leaderboard identity (Settings)
+   ========================================================================= */
+
+.sh-identity {
+  padding: 14px 16px;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-panel-border);
+  background: rgba(255, 200, 97, 0.05);
+}
+
+.sh-identity__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+
+.sh-identity__label {
+  font-size: 13.5px;
+  color: var(--sh-text-dim);
+}
+
+.sh-identity__name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--sh-gold-bright);
+}
+
+.sh-identity__code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sh-identity__code {
+  padding: 4px 10px;
+  border-radius: var(--sh-radius-sm);
+  background: rgba(9, 4, 18, 0.5);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13.5px;
+  letter-spacing: 0.08em;
+  color: var(--sh-cyan);
+}
+
+.sh-identity__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--sh-text-faint);
+}
+
+.sh-identity__restore {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 200, 97, 0.14);
+}
+
+.sh-identity__restore-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+/* The name is the longer of the two, so it takes the slack. */
+.sh-identity__restore-row .sh-submit__input:first-child { flex: 2 1 140px; }
+.sh-identity__restore-row .sh-submit__input:nth-child(2) { flex: 1 1 110px; }

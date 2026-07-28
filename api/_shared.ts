@@ -85,6 +85,39 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+/**
+ * Where username ownership lives.
+ *
+ * Deliberately global and without a TTL, unlike the monthly boards. Scores
+ * reset on the first of the month; the name a player chose does not, because
+ * having it quietly handed to a stranger every month would be worse than the
+ * collisions this exists to prevent.
+ */
+export const USERNAMES_KEY = 'usernames';
+
+export interface UsernameRecord {
+  /** Anonymous browser id that currently holds this name. */
+  owner: string;
+  /** Short code that lets the owner move the name to another device. */
+  code: string;
+  /** The name as it was typed, so the board can show the original casing. */
+  display: string;
+  at: number;
+}
+
+/**
+ * Generates a short, readable recovery code.
+ *
+ * The alphabet omits I, O, 0 and 1 because these get written down and typed
+ * back in by hand, and those four are where that goes wrong.
+ */
+export function makeRecoveryCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  const body = [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+  return `${body.slice(0, 4)}-${body.slice(4)}`;
+}
+
 /** Seconds until a board should disappear: this month plus a grace period. */
 export const BOARD_TTL = 70 * 24 * 60 * 60;
 
