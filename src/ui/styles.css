@@ -3073,10 +3073,54 @@ body {
   display: flex;
 }
 
+/* Narrow or short screens stack the board beneath the menu rather than hiding
+   it. The standings are the reason to come back, so they should survive a
+   small window — the column just becomes scrollable instead. */
 @media (max-width: 1180px), (max-height: 640px) {
-  /* Below this the board squeezes the title, and the menu reads better as a
-     single column with the standings dropped. */
-  .sh-menu__board { display: none; }
+  .sh-menu {
+    /* Lifted from the desktop layout, which relies on nothing overflowing. */
+    overflow-y: auto;
+    flex-direction: column;
+  }
+
+  .sh-menu__layout {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    height: auto;
+    min-height: auto;
+    padding-bottom: 1.5rem;
+  }
+
+  /* Absolute positioning parks the credit line over whatever happens to be at
+     the bottom of the viewport, which once the page scrolls is the middle of
+     the board. In the stacked layout it joins the flow and sits at the end. */
+  .sh-menu__footer {
+    position: static;
+    align-self: center;
+    margin: 0 0 1.5rem;
+    padding: 0 1rem;
+    text-align: center;
+  }
+
+  .sh-menu__content {
+    height: auto;
+    max-width: min(560px, 92vw);
+    padding-bottom: 0;
+  }
+
+  .sh-menu__board {
+    flex: none;
+    width: 100%;
+    max-width: 560px;
+    max-height: none;
+  }
+
+  /* Without a viewport-height cap the list would grow without bound and push
+     the page into a very long scroll on a phone-shaped window. */
+  .sh-board__list {
+    max-height: 46vh;
+  }
 }
 
 .sh-board {

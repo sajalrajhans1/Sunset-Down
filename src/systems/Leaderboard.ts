@@ -30,6 +30,7 @@ export interface Board {
 }
 
 const NAME_KEY = 'sh-player-name';
+const PLAYER_ID_KEY = 'sh-player-id';
 const LOCAL_BOARD_KEY = 'sh-local-board';
 const MAX_LOCAL = 25;
 
@@ -51,6 +52,26 @@ export class Leaderboard {
   // -------------------------------------------------------------------------
   // Identity
   // -------------------------------------------------------------------------
+
+  /**
+   * A stable, anonymous id for this browser.
+   *
+   * This is what identifies a player on the board, *not* their name. Names are
+   * free text, so two strangers both calling themselves "Sam" are two players
+   * and must each keep their own row — deduplicating on the name would let one
+   * of them silently delete the other's run.
+   *
+   * It is random, carries nothing about the person, and is never shown or
+   * returned by the API. Clearing site data simply makes a new player.
+   */
+  get playerId(): string {
+    let id = Storage.get<string>(PLAYER_ID_KEY, '');
+    if (!/^[a-f0-9]{32}$/.test(id)) {
+      id = crypto.randomUUID().replace(/-/g, '');
+      Storage.set(PLAYER_ID_KEY, id);
+    }
+    return id;
+  }
 
   /** The name this player last submitted under, if any. */
   get savedName(): string {
@@ -140,7 +161,7 @@ export class Leaderboard {
     }>('/api/scores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: this.runToken, ...run, name }),
+      body: JSON.stringify({ token: this.runToken, client: this.playerId, ...run, name }),
     });
 
     // A token is good for exactly one score either way.

@@ -274,6 +274,15 @@ export class GameOverScreen {
       );
     } else if (result.global && result.reason === 'not a personal best') {
       this.setStatus('Your best run this month still stands.', 'info');
+    } else if (result.reason === 'name already taken this month') {
+      this.setStatus('Too many players are using that name — try another.', 'error');
+      // Let them pick again rather than stranding them on a dead form.
+      this.nameInput.disabled = false;
+      this.submitButton.disabled = false;
+      this.submitButton.textContent = 'Submit score';
+      this.nameInput.focus();
+      this.nameInput.select();
+      return;
     } else if (result.reason === 'run already submitted') {
       this.setStatus('That run has already been submitted.', 'info');
     } else {

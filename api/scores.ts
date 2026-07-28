@@ -36,6 +36,14 @@ interface Entry {
 const rankOf = (wave: number, kills: number): number =>
   wave * 1_000_000 + Math.min(kills, 999_999);
 
+/**
+ * How many different players may share one name in a month.
+ *
+ * Genuine collisions on common names are expected and allowed; this only stops
+ * someone papering the board with a single name from a script.
+ */
+const MAX_PER_NAME = 3;
+
 export default async function handler(request: Request): Promise<Response> {
   if (!isConfigured()) return json({ configured: false, entries: [], month: boardLabel() });
 
@@ -94,13 +102,31 @@ async function submit(request: Request): Promise<Response> {
   const { name, wave, kills, timeSurvived } = check.claim;
   const key = boardKey();
   const bestKey = `${key}:best`;
-  // Case-insensitive, so one person cannot fill the board with "Sam", "SAM"…
-  const nameKey = name.toLowerCase();
+  const namesKey = `${key}:names`;
   const score = rankOf(wave, kills);
 
-  // Keep only each name's best run for the month. Without this a single player
-  // grinding twenty runs would push everyone else off a hundred-row board.
-  const previousRaw = await redis<string | null>('HGET', bestKey, nameKey);
+  /**
+   * Players are identified by the anonymous id their browser generated, never
+   * by the name they typed.
+   *
+   * Names are free text and collide constantly — "Sam", "Alex", "pro" — and
+   * keying on them would mean two strangers sharing a name are treated as one
+   * player: the second either gets told their run "isn't a personal best", or
+   * replaces the first person's entry outright. Keying on the client means
+   * both keep their own row and the board simply shows the name twice.
+   *
+   * Falls back to the name when no id is supplied, which keeps older clients
+   * from posting an unbounded number of rows.
+   */
+  const rawClient = (body as { client?: unknown }).client;
+  const playerKey =
+    typeof rawClient === 'string' && /^[a-f0-9]{32}$/.test(rawClient)
+      ? `c:${rawClient}`
+      : `n:${name.toLowerCase()}`;
+
+  // Keep only each player's best run for the month. Without this a single
+  // player grinding twenty runs would push everyone else off the board.
+  const previousRaw = await redis<string | null>('HGET', bestKey, playerKey);
   if (previousRaw) {
     try {
       const previous = JSON.parse(previousRaw) as Entry;
@@ -110,6 +136,19 @@ async function submit(request: Request): Promise<Response> {
       await redis('ZREM', key, previousRaw);
     } catch {
       // Unparseable history is simply replaced.
+    }
+  } else {
+    // A player new to this month claiming a name that is already in use. Real
+    // duplicates are fine and expected, but this is also the cheapest way to
+    // fill a board with one name, so allow a handful and no more.
+    const nameCount = await redis<number>('HINCRBY', namesKey, name.toLowerCase(), 1);
+    await redis('EXPIRE', namesKey, BOARD_TTL);
+    if (nameCount > MAX_PER_NAME) {
+      return json({
+        configured: true,
+        recorded: false,
+        reason: 'name already taken this month',
+      });
     }
   }
 
@@ -125,7 +164,7 @@ async function submit(request: Request): Promise<Response> {
   const member = JSON.stringify(entry);
 
   await redis('ZADD', key, score, member);
-  await redis('HSET', bestKey, nameKey, member);
+  await redis('HSET', bestKey, playerKey, member);
   // Trim to the top N, then refresh both keys' lifetimes together.
   await redis('ZREMRANGEBYRANK', key, 0, -(BOARD_SIZE + 1));
   await redis('EXPIRE', key, BOARD_TTL);
