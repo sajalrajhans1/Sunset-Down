@@ -1,4 +1,4 @@
-import { boardKey, configState, isConfigured, json, redis } from './_shared';
+import { boardKey, configState, isConfigured, json, redis, underRateLimit } from './_shared';
 
 export const config = { runtime: 'edge' };
 
@@ -10,8 +10,15 @@ export const config = { runtime: 'edge' };
  * outside they are indistinguishable. Reports which pieces of configuration
  * are present and whether Redis answers, never any value of any of them.
  */
-export default async function handler(): Promise<Response> {
+export default async function handler(request: Request): Promise<Response> {
   const present = configState();
+
+  // This endpoint queries Redis, and the database it queries has a request
+  // quota. Left open it is a free way for anyone to spend that quota, so it
+  // gets the same treatment as everything else that talks to storage.
+  if (isConfigured() && !(await underRateLimit(request, 'health', 12))) {
+    return json({ error: 'slow down' }, 429);
+  }
 
   if (!isConfigured()) {
     return json({

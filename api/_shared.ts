@@ -156,6 +156,28 @@ export async function issueToken(): Promise<string> {
   return `${nonce}.${issuedAt}.${signature}`;
 }
 
+/**
+ * Length-independent, content-independent string comparison.
+ *
+ * Used wherever a caller-supplied value is checked against a secret. A plain
+ * `===` returns as soon as two characters differ, so how long it took narrows
+ * down how much of the value was right. Over the public internet that signal
+ * is buried in jitter and this is close to paranoia - but the token signature
+ * already gets this treatment and a recovery code deserves the same, not least
+ * because anyone reading this repository can see which one got it and which
+ * one did not.
+ */
+export function safeEqual(a: string, b: string): boolean {
+  // Compare a fixed number of characters either way, so length alone leaks
+  // nothing beyond the mismatch flag.
+  const length = Math.max(a.length, b.length);
+  let mismatch = a.length ^ b.length;
+  for (let i = 0; i < length; i++) {
+    mismatch |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return mismatch === 0;
+}
+
 export interface TokenCheck {
   ok: boolean;
   reason?: string;
@@ -180,13 +202,7 @@ export async function verifyToken(token: unknown): Promise<TokenCheck> {
   if (!Number.isFinite(issuedAt)) return { ok: false, reason: 'malformed token' };
 
   const expected = await sign(`${nonce}.${issuedAt}`);
-  // Length-equal comparison; the values are hex of fixed size.
-  if (expected.length !== signature.length) return { ok: false, reason: 'bad signature' };
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-  }
-  if (mismatch !== 0) return { ok: false, reason: 'bad signature' };
+  if (!safeEqual(expected, signature)) return { ok: false, reason: 'bad signature' };
 
   const ageSeconds = (Date.now() - issuedAt) / 1000;
   if (ageSeconds < MIN_RUN_SECONDS) return { ok: false, reason: 'run too short' };

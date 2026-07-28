@@ -99,10 +99,13 @@ export class Leaderboard {
     const cleaned = sanitiseName(name).trim();
     if (!cleaned) return { available: false, mine: false };
 
-    const query = `?name=${encodeURIComponent(cleaned)}&client=${this.playerId}`;
-    const result = await this.request<{ available: boolean; mine: boolean }>(
-      `/api/username${query}`,
-    );
+    // POST rather than GET: this carries the player id, which is effectively a
+    // credential, and query strings end up in logs and browser history.
+    const result = await this.request<{ available: boolean; mine: boolean }>('/api/username', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'check', name: cleaned, client: this.playerId }),
+    });
     if (!result) return { available: true, mine: false };
     return { available: !!result.available, mine: !!result.mine };
   }
