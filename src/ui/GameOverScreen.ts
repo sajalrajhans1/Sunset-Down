@@ -39,6 +39,10 @@ export class GameOverScreen {
 
   // --- Score submission ---
   private readonly submitRow: HTMLElement;
+  private readonly submitLabel: HTMLElement;
+  private readonly inputRow: HTMLElement;
+  private readonly identityRow: HTMLElement;
+  private readonly savedNameLabel = el('strong', { className: 'sh-submit__saved-name' });
   private readonly nameInput: HTMLInputElement;
   private readonly submitButton: HTMLButtonElement;
   private readonly submitStatus: HTMLElement;
@@ -81,20 +85,37 @@ export class GameOverScreen {
 
     this.submitStatus = el('p', { className: 'sh-submit__status' });
 
+    this.submitLabel = el('label', {
+      className: 'sh-submit__label',
+      text: 'Put your name on the board',
+      attrs: { for: 'sh-name-input' },
+    });
+
+    this.inputRow = el('div', {
+      className: 'sh-submit__row',
+      children: [this.nameInput, this.submitButton],
+    });
+
+    // Shown instead of the input once we know who this is.
+    this.identityRow = el('div', {
+      className: 'sh-submit__identity',
+      children: [
+        el('span', { className: 'sh-submit__as', children: [
+          el('span', { text: 'Playing as ' }),
+          this.savedNameLabel,
+        ] }),
+        el('button', {
+          className: 'sh-submit__change',
+          text: 'Not you?',
+          attrs: { type: 'button' },
+          on: { click: () => this.revealNameInput() },
+        }),
+      ],
+    });
+
     this.submitRow = el('div', {
       className: 'sh-submit',
-      children: [
-        el('label', {
-          className: 'sh-submit__label',
-          text: 'Put your name on the board',
-          attrs: { for: 'sh-name-input' },
-        }),
-        el('div', {
-          className: 'sh-submit__row',
-          children: [this.nameInput, this.submitButton],
-        }),
-        this.submitStatus,
-      ],
+      children: [this.submitLabel, this.identityRow, this.inputRow, this.submitStatus],
     });
     this.nameInput.id = 'sh-name-input';
 
@@ -229,6 +250,15 @@ export class GameOverScreen {
   // -------------------------------------------------------------------------
 
   /** Resets the form for a fresh result and pre-fills the last used name. */
+  /**
+   * Sets the form up for this result.
+   *
+   * A player who has already told us their name is not asked again. The board
+   * identifies them by a stable id their browser keeps, so a run ten days later
+   * updates the same row — there is nothing for them to re-enter, and making
+   * them retype it every death would be pure friction. The name is still one
+   * click away if they want to change it.
+   */
   private prepareSubmission(data: GameOverData): void {
     this.pendingRun = {
       wave: data.waveReached,
@@ -246,14 +276,54 @@ export class GameOverScreen {
     // Surviving nothing is not a score.
     const eligible = data.waveReached >= 1;
     this.submitRow.style.display = eligible ? '' : 'none';
+    if (!eligible) return;
+
+    const known = leaderboard.savedName.trim();
+    if (known) {
+      this.showIdentity(known);
+      // Submitted for them, rather than waiting on a click they have no reason
+      // to withhold. The server keeps whichever run is better.
+      void this.submitScore();
+    } else {
+      this.revealNameInput();
+    }
+  }
+
+  /** Switches the form to the "we know who you are" state. */
+  private showIdentity(name: string): void {
+    this.savedNameLabel.textContent = name;
+    this.submitLabel.style.display = 'none';
+    this.identityRow.style.display = '';
+    this.inputRow.style.display = 'none';
+  }
+
+  /** Switches back to asking for a name, and focuses it. */
+  private revealNameInput(): void {
+    this.submitLabel.style.display = '';
+    this.identityRow.style.display = 'none';
+    this.inputRow.style.display = '';
+    this.nameInput.disabled = false;
+    this.submitButton.disabled = this.nameInput.value.trim().length === 0;
+    this.submitButton.textContent = 'Submit score';
+    this.nameInput.focus();
+    this.nameInput.select();
   }
 
   private async submitScore(): Promise<void> {
-    if (!this.pendingRun) return;
-
     const name = sanitiseName(this.nameInput.value).trim();
     if (!name) {
       this.setStatus('Enter a name first.', 'error');
+      return;
+    }
+
+    // The run was already sent under the previous name. A run token is good
+    // for exactly one score, so this cannot move the entry that just landed —
+    // it changes who they are from the next run onward. Say that plainly
+    // rather than implying the board is about to update.
+    if (!this.pendingRun) {
+      leaderboard.savedName = name;
+      this.showIdentity(name);
+      this.setStatus(`Saved. Your next run will post as ${name}.`, 'info');
       return;
     }
 
@@ -269,7 +339,9 @@ export class GameOverScreen {
 
     if (result.global && result.recorded) {
       this.setStatus(
-        result.rank ? `You are #${result.rank} this month.` : 'Your score is on the board.',
+        result.rank
+          ? `You are #${result.rank} this month.`
+          : 'Your score is on the board.',
         'success',
       );
     } else if (result.global && result.reason === 'not a personal best') {

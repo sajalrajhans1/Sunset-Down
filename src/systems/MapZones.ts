@@ -436,6 +436,27 @@ export class MapZones {
   // Purchases
   // -------------------------------------------------------------------------
 
+  /**
+   * Forces the next still-shut barricade open, free of charge.
+   *
+   * Later waves throw far more bodies at the player, and a plaza that was
+   * comfortable at wave three is a deathtrap at wave fifteen - there is simply
+   * nowhere left to run. Rather than rebalance the horde downward, the arena
+   * grows: the town opens itself up as the waves climb.
+   *
+   * Buying a gate early is still worth it, because it also buys the weapon on
+   * the wall behind it and the room to use it. This only guarantees that a
+   * player who could never afford one does not get boxed in and crushed.
+   *
+   * Returns the name of the district opened, or null if none were left.
+   */
+  openNextForFree(): string | null {
+    const gate = this.gates.find((candidate) => !candidate.open);
+    if (!gate) return null;
+    this.releaseGate(gate);
+    return gate.def.name;
+  }
+
   private openGate(gate: Gate): void {
     if (gate.open) return;
     if (!this.callbacks.spend(gate.def.cost)) {
@@ -443,6 +464,12 @@ export class MapZones {
       return;
     }
 
+    this.releaseGate(gate);
+  }
+
+  /** Everything that happens when a barricade comes down, however it came down. */
+  private releaseGate(gate: Gate): void {
+    if (gate.open) return;
     gate.open = true;
     for (const collider of gate.colliders) collider.enabled = false;
 

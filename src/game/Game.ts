@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { ECONOMY } from './Config';
+import { ECONOMY, FREE_GATE_WAVES } from './Config';
 import { PlayerStats } from './PlayerStats';
 import { settings, detectRecommendedPreset, type QualityProfile, QUALITY_PROFILES } from './Settings';
 
@@ -628,6 +628,30 @@ export class Game {
     this.postFx.flash(isBoss ? 0.3 : 0.16, isBoss ? 0xff8080 : 0xffd9a0);
     this.player.addShake(isBoss ? 0.9 : 0.35);
     if (isBoss) audio.sfx.bossRoar();
+
+    this.growMapForWave(wave);
+  }
+
+  /**
+   * Opens up more of the town as the waves climb.
+   *
+   * The plaza holds maybe a dozen bodies before there is nowhere left to
+   * stand, and by the mid teens a wave is far larger than that. Without more
+   * ground the difficulty stops being about aim and starts being about whether
+   * the geometry happens to trap you, which is not a fight worth losing.
+   *
+   * Deliberately staged a few waves apart rather than all at once: each
+   * opening is a beat the player notices, and it keeps the early game tight.
+   */
+  private growMapForWave(wave: number): void {
+    if (!FREE_GATE_WAVES.includes(wave)) return;
+
+    const opened = this.mapZones.openNextForFree();
+    if (!opened) return;
+
+    // onZoneOpened already rebuilds navigation and announces the district;
+    // this only adds the reason it happened.
+    this.ui.hud.addKillFeedEntry('The barricade gives way', '🚧', 'incoming');
   }
 
   private onWaveCleared(wave: number): void {

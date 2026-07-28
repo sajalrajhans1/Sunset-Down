@@ -1,6 +1,7 @@
 import {
   BOARD_SIZE,
   BOARD_TTL,
+  bodyTooLarge,
   boardKey,
   boardLabel,
   consumeToken,
@@ -76,6 +77,8 @@ async function readBoard(): Promise<Response> {
 }
 
 async function submit(request: Request): Promise<Response> {
+  if (bodyTooLarge(request)) return json({ error: 'payload too large' }, 413);
+
   if (!(await underRateLimit(request, 'score', 10))) {
     return json({ error: 'slow down' }, 429);
   }

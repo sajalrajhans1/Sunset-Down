@@ -14,23 +14,48 @@ import type { Game as GameType } from './game/Game';
  * emits a modulepreload hint for it, so desktop start-up is unaffected.
  */
 
+/**
+ * Last-resort error screen.
+ *
+ * Built out of nodes with textContent rather than an interpolated HTML string.
+ * The detail line carries an exception message, which is engine-originated
+ * today but is exactly the sort of value that quietly grows to include a URL
+ * or a server response later - and an innerHTML sink is the wrong place to
+ * discover that.
+ */
 function showFatalError(title: string, detail: string): void {
   const root = document.getElementById('ui-root');
   if (!root) return;
-  root.innerHTML = `
-    <div class="sh-overlay">
-      <div class="sh-panel sh-modal" style="max-width:520px">
-        <div class="sh-modal__header">
-          <div>
-            <h2 class="sh-panel__title">${title}</h2>
-            <p class="sh-panel__subtitle">Sunset Hollow could not start.</p>
-          </div>
-        </div>
-        <div class="sh-modal__body">
-          <p style="line-height:1.6;color:var(--sh-text-dim)">${detail}</p>
-        </div>
-      </div>
-    </div>`;
+
+  const make = (tag: string, className: string, text?: string): HTMLElement => {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const heading = make('h2', 'sh-panel__title', title);
+  const subtitle = make('p', 'sh-panel__subtitle', 'Sunset Hollow could not start.');
+  const body = make('p', '', detail);
+  body.style.lineHeight = '1.6';
+  body.style.color = 'var(--sh-text-dim)';
+
+  const header = make('div', 'sh-modal__header');
+  const headerInner = make('div', '');
+  headerInner.append(heading, subtitle);
+  header.append(headerInner);
+
+  const modalBody = make('div', 'sh-modal__body');
+  modalBody.append(body);
+
+  const modal = make('div', 'sh-panel sh-modal');
+  modal.style.maxWidth = '520px';
+  modal.append(header, modalBody);
+
+  const overlay = make('div', 'sh-overlay');
+  overlay.append(modal);
+
+  root.replaceChildren(overlay);
 }
 
 function hasWebGL2(): boolean {

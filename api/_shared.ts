@@ -324,8 +324,35 @@ export function countryOf(request: Request): string {
 
 /** Coarse client identity for rate limiting. Never stored with the entry. */
 export function clientKey(request: Request): string {
+  // `x-forwarded-for` is a client-supplied list that proxies append to, so its
+  // *first* entry is whatever the caller decided to put there. Reading that
+  // would let anyone mint a fresh rate-limit bucket per request simply by
+  // varying a header, which defeats the limit entirely.
+  //
+  // Vercel sets these two itself and they cannot be forged from outside, so
+  // they are preferred. The fallback takes the *last* forwarded entry - the
+  // one appended by the hop closest to us - rather than the first.
+  const trusted =
+    request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-real-ip');
+  if (trusted && trusted.trim()) return trusted.trim();
+
   const forwarded = request.headers.get('x-forwarded-for') ?? '';
-  return forwarded.split(',')[0].trim() || 'unknown';
+  const hops = forwarded.split(',').map((hop) => hop.trim()).filter(Boolean);
+  return hops.length > 0 ? hops[hops.length - 1] : 'unknown';
+}
+
+/**
+ * Short, stable hash of a value, used so rate-limit keys never contain a raw
+ * IP address. The buckets live for two minutes and exist only to count
+ * requests; there is no reason to write someone's address into a database to
+ * do that.
+ */
+async function hashed(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(value));
+  return [...new Uint8Array(digest)]
+    .slice(0, 8)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 /**
@@ -334,10 +361,23 @@ export function clientKey(request: Request): string {
  */
 export async function underRateLimit(request: Request, bucket: string, limit: number): Promise<boolean> {
   const minute = Math.floor(Date.now() / 60_000);
-  const key = `rl:${bucket}:${clientKey(request)}:${minute}`;
+  const key = `rl:${bucket}:${await hashed(clientKey(request))}:${minute}`;
   const count = await redis<number>('INCR', key);
   if (count === 1) await redis('EXPIRE', key, 120);
   return count <= limit;
+}
+
+/**
+ * Largest request body the score endpoint will read, in bytes.
+ * A submission is a couple of hundred bytes; anything approaching this is
+ * either broken or trying to make the function do pointless work.
+ */
+export const MAX_BODY_BYTES = 4096;
+
+/** True when the request declares a body larger than we are willing to parse. */
+export function bodyTooLarge(request: Request): boolean {
+  const declared = Number(request.headers.get('content-length') ?? '0');
+  return Number.isFinite(declared) && declared > MAX_BODY_BYTES;
 }
 
 export const json = (data: unknown, status = 200): Response =>

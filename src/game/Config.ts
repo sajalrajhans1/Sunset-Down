@@ -60,6 +60,20 @@ export const PLAYER = {
   hurtImmunity: 0.34,
 } as const;
 
+/**
+ * Waves at which the town forces a barricade open, free.
+ *
+ * One district per milestone, in the order they are defined. A player who has
+ * already bought them all sees nothing happen; a player who has bought none
+ * still ends up with the whole map by the last of these.
+ *
+ * The first of these is worth roughly eight times the plaza in reachable
+ * ground, because the outer town is one connected ring - so it is set late
+ * enough that buying a gate early is still clearly the better play, and only
+ * acts as a floor for someone who could never afford one.
+ */
+export const FREE_GATE_WAVES = [8, 12, 16];
+
 export const WAVES = {
   prepTimeFirst: 12,
   prepTime: 18,

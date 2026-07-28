@@ -725,6 +725,18 @@ body {
   z-index: 20;
 }
 
+/**
+ * Opens over other modals rather than under them.
+ *
+ * Must come after .sh-overlay: both are single-class selectors, so at equal
+ * specificity the later rule wins and .sh-overlay's own z-index would
+ * otherwise cancel this one out. Kept below the loading screen (z 50), which
+ * has to cover everything.
+ */
+.sh-overlay--top {
+  z-index: 30;
+}
+
 @keyframes sh-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -3440,3 +3452,40 @@ body {
 .sh-board--compact .sh-board__eyebrow { font-size: 9.5px; }
 .sh-board--compact .sh-board__list { overflow: visible; }
 .sh-board--compact .sh-board__footer { display: none; }
+
+/* Returning player: shown instead of the name input once we know who they are. */
+.sh-submit__identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sh-submit__as {
+  font-size: 14.5px;
+  color: var(--sh-text-dim);
+}
+
+.sh-submit__saved-name {
+  color: var(--sh-gold-bright);
+  font-weight: 800;
+}
+
+.sh-submit__change {
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--sh-text-faint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.18s var(--sh-ease-out);
+}
+
+.sh-submit__change:hover,
+.sh-submit__change:focus-visible {
+  color: var(--sh-gold);
+}

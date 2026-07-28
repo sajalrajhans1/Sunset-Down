@@ -16,7 +16,11 @@ export class SettingsPanel {
 
   constructor() {
     this.root = el('div', {
-      className: 'sh-overlay sh-screen--hidden',
+      // --top because settings is the one modal that opens *on top of another
+      // modal — the pause screen. Every overlay otherwise sits at the same
+      // stacking level, so whichever happens to be later in the DOM wins, and
+      // the pause screen is appended after this one.
+      className: 'sh-overlay sh-overlay--top sh-screen--hidden',
       attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Settings' },
     });
     this.build();

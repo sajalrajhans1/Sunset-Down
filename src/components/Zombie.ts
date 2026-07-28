@@ -122,6 +122,8 @@ export class Zombie {
     dt: 0,
     elapsed: 0,
     stride: 0,
+    speed: 0,
+    run: 0,
     gaitPhase: 0,
     attackWindup: 0,
     attackWindupDuration: 0.34,
@@ -564,7 +566,14 @@ export class Zombie {
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
     const stride = clamp01(speed / Math.max(0.5, this.speed));
 
-    this.gaitPhase += ctx.dt * this.def.gaitFrequency * (4.2 + stride * 3.4);
+    // Walking below ~2.8 m/s, unmistakably running by ~5.5. Smoothstepped so a
+    // zombie hovering around the threshold doesn't flicker between gaits.
+    const runT = clamp01((speed - 2.8) / 2.7);
+    const run = runT * runT * (3 - 2 * runT);
+
+    // Cadence rises with the run blend as well as the stride, so a sprinter's
+    // legs turn over visibly faster than a shambler at its own top speed.
+    this.gaitPhase += ctx.dt * this.def.gaitFrequency * (4.2 + stride * 3.4 + run * 2.6);
 
     // Signed yaw from where the body faces to where the player actually is.
     const toPlayerAngle = Math.atan2(
@@ -578,6 +587,8 @@ export class Zombie {
     state.dt = ctx.dt;
     state.elapsed = ctx.elapsed;
     state.stride = stride;
+    state.speed = speed;
+    state.run = run;
     state.gaitPhase = this.gaitPhase;
     state.attackWindup = this.attackWindup;
     state.attackWindupDuration = lerp(0.34, 0.18, clamp01(ctx.aggression));
