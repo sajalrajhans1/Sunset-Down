@@ -181,3 +181,16 @@ The three bitmap images — menu backdrop, pause backdrop, zombie skin — were 
 Fonts are Baloo 2 and Nunito, served from Google Fonts.
 
 Deliberate content constraint: the zombies are menacing but **bloodless**. No gore, no wounds, no organs. They're gaunt and predatory with glowing sunken eyes, which turns out to be more unsettling than red paint anyway.
+
+---
+
+## Licence and ownership
+
+Copyright (c) 2026 **Sajal Rajhans**. All rights reserved. See [LICENSE](LICENSE).
+
+This repository is public so people can read it and learn from it. It is **not**
+open source: you are welcome to study the code and fork it here on GitHub, but
+deploying it — in whole or in part, modified or not — or presenting it as your
+own work, is not permitted without written permission.
+
+The full authorship history is in this repository's commits.

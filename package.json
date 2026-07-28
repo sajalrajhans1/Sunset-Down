@@ -2,8 +2,10 @@
   "name": "sunset-hollow",
   "private": true,
   "version": "1.0.0",
-  "type": "module",
   "description": "Sunset Hollow - a stylized first-person zombie wave-survival game for the browser.",
+  "author": "Sajal Rajhans",
+  "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
