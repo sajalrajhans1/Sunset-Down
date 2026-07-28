@@ -289,6 +289,7 @@ export class AudioCore {
     listenerForward: { x: number; z: number },
     sourcePos: { x: number; y: number; z: number },
     maxDistance = 55,
+    lifetime = POSITIONAL_CHAIN_LIFETIME,
   ): { input: GainNode; audible: boolean } {
     const dx = sourcePos.x - listenerPos.x;
     const dz = sourcePos.z - listenerPos.z;
@@ -326,7 +327,7 @@ export class AudioCore {
     // Registered here rather than at the ~26 call sites, so a new sound can
     // never leak its output chain by forgetting to clean up. The window is
     // comfortably longer than the longest effect tail in the game.
-    this.scheduleRelease([gain, airFilter, panner, send], POSITIONAL_CHAIN_LIFETIME);
+    this.scheduleRelease([gain, airFilter, panner, send], lifetime);
 
     return { input: gain, audible: true };
   }

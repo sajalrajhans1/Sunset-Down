@@ -91,7 +91,6 @@ export class Game {
   private readonly governor = new PerformanceGovernor({
     onRenderScale: (scale) => this.applyRenderScale(scale),
     onCrowdBudget: (fraction) => this.applyCrowdBudget(fraction),
-    onPresetChange: (preset) => settings.set('graphics', preset),
   });
   private renderScale = 1;
   /**

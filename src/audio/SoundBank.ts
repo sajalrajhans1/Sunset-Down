@@ -66,7 +66,12 @@ export class SoundBank {
   }
 
   /** Routes a sound either to the flat 2D bus or through positional shaping. */
-  private output(position?: Vec3Like, maxDistance = 55, reverb = 0.18): GainNode | null {
+  private output(
+    position?: Vec3Like,
+    maxDistance = 55,
+    reverb = 0.18,
+    lifetime = 4,
+  ): GainNode | null {
     const { core } = this;
     if (!position) {
       const gain = core.createGain(1);
@@ -79,7 +84,7 @@ export class SoundBank {
         chain.push(send);
       }
       // Same guarantee as the positional path: the chain tears itself down.
-      core.scheduleRelease(chain, 4);
+      core.scheduleRelease(chain, lifetime);
       return gain;
     }
 
@@ -88,6 +93,7 @@ export class SoundBank {
       { x: this.listener.forwardX, z: this.listener.forwardZ },
       position,
       maxDistance,
+      lifetime,
     );
     if (!audible) {
       input.disconnect();
@@ -117,11 +123,15 @@ export class SoundBank {
     // Reverb is the most expensive part of the chain, so busy moments get less.
     const space = lean ? profile.space * 0.25 : profile.space;
 
-    const out = this.output(position, 90, space);
+    const totalLife = Math.max(profile.decay, profile.tail) * 1.9;
+    // The default four-second window is generous for a one-off effect, but a
+    // gunshot decays in under a third of a second and an automatic weapon
+    // fires fourteen a second - holding each chain open that long stacked up
+    // dozens of live filters for no reason. Tie it to the actual sound.
+    const out = this.output(position, 90, space, totalLife + 0.4);
     if (!out) return;
 
     this.activeGunshots++;
-    const totalLife = Math.max(profile.decay, profile.tail) * 1.9;
     // Released off the shared audio sweep rather than its own timer, so
     // sustained fire doesn't queue a setTimeout per round.
     core.scheduleRelease([], totalLife, () => {

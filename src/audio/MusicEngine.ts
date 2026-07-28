@@ -430,6 +430,25 @@ export class MusicEngine {
   // -------------------------------------------------------------------------
 
   /** Three detuned saws through a slow filter sweep — a proper analogue pad. */
+  /**
+   * Releases a voice's shaping nodes once it has stopped sounding.
+   *
+   * Every voice below disconnects its oscillators through `onended`, but the
+   * filters and gains those oscillators fed were left wired to the bus for the
+   * lifetime of the page. Measured at high intensity that leaked roughly forty
+   * seven nodes a second - a thousand of them after twenty seconds - and the
+   * audio thread goes on processing every one of them. That is why the music
+   * started to crackle the longer a session ran, and why it got worse under
+   * sustained gunfire: the graph was already saturated before the shooting
+   * added to it.
+   *
+   * `until` is an absolute context time, because voices are scheduled ahead of
+   * the clock; the small margin covers the release tail of the envelope.
+   */
+  private release(nodes: AudioNode[], until: number): void {
+    this.core.scheduleRelease(nodes, Math.max(0, until - this.core.now) + 0.2);
+  }
+
   private playPad(frequency: number, time: number, duration: number, level: number): void {
     const { core } = this;
     const filter = core.createFilter('lowpass', 500, 2.2);
@@ -456,6 +475,8 @@ export class MusicEngine {
     gain.gain.linearRampToValueAtTime(peak, time + duration * 0.3);
     gain.gain.setValueAtTime(peak, time + duration * 0.62);
     gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+    this.release([filter, gain], time + duration + 0.1);
   }
 
   private playBass(frequency: number, time: number, duration: number): void {
@@ -487,6 +508,8 @@ export class MusicEngine {
       osc.disconnect();
       sub.disconnect();
     };
+
+    this.release([filter, gain], time + duration + 0.05);
   }
 
   private playArp(frequency: number, time: number, duration: number): void {
@@ -514,6 +537,8 @@ export class MusicEngine {
       osc.disconnect();
       shimmer.disconnect();
     };
+
+    this.release([gain, shimmerGain], time + duration + 0.04);
   }
 
   private playLead(frequency: number, time: number, duration: number): void {
@@ -548,6 +573,8 @@ export class MusicEngine {
     osc.start(time);
     osc.stop(time + duration + 0.06);
     osc.onended = () => osc.disconnect();
+
+    this.release([filter, gain, lfoGain], time + duration + 0.06);
   }
 
   /** FM bell — two sines where one modulates the other's frequency. */
@@ -579,6 +606,8 @@ export class MusicEngine {
       carrier.disconnect();
       modulator.disconnect();
     };
+
+    this.release([modGain, gain], time + 1.9);
   }
 
   private playKick(time: number, level = 1): void {
@@ -614,6 +643,8 @@ export class MusicEngine {
       osc.disconnect();
       click.disconnect();
     };
+
+    this.release([gain, clickFilter, clickGain], time + 0.34);
   }
 
   private playSnare(time: number, level: number): void {
@@ -649,6 +680,8 @@ export class MusicEngine {
       noise.disconnect();
       body.disconnect();
     };
+
+    this.release([filter, gain, bodyGain], time + 0.24);
   }
 
   private playHat(time: number, level: number, open: boolean): void {
@@ -669,6 +702,8 @@ export class MusicEngine {
     noise.start(time, Math.random());
     noise.stop(time + decay + 0.03);
     noise.onended = () => noise.disconnect();
+
+    this.release([filter, gain], time + decay + 0.03);
   }
 
   /** Descending tom used for end-of-loop fills. */
@@ -689,6 +724,8 @@ export class MusicEngine {
     osc.start(time);
     osc.stop(time + 0.24);
     osc.onended = () => osc.disconnect();
+
+    this.release([gain], time + 0.24);
   }
 
   dispose(): void {
