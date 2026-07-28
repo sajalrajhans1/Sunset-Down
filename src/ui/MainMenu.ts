@@ -148,7 +148,7 @@ export class MainMenu {
       attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Credits' },
       children: [
         el('div', {
-          className: 'sh-panel sh-modal',
+          className: 'sh-panel sh-modal sh-credits-modal',
           children: [
             el('div', {
               className: 'sh-modal__header',
@@ -164,61 +164,87 @@ export class MainMenu {
             el('div', {
               className: 'sh-modal__body sh-credits',
               children: [
-                el('h3', { className: 'sh-section-title', text: 'Controls' }),
-                el('dl', {
-                  className: 'sh-keylist',
+                // Left column: the reference table.
+                el('section', {
+                  className: 'sh-credits__group sh-credits__group--controls',
                   children: [
-                    el('dt', { children: [kbd('W'), kbd('A'), kbd('S'), kbd('D')] }),
-                    el('dd', { text: 'Move' }),
-                    el('dt', { children: [kbd('Shift')] }),
-                    el('dd', { text: 'Sprint' }),
-                    el('dt', { children: [kbd('Space')] }),
-                    el('dd', { text: 'Jump' }),
-                    el('dt', { children: [kbd('C')] }),
-                    el('dd', { text: 'Crouch' }),
-                    el('dt', { children: [kbd('LMB')] }),
-                    el('dd', { text: 'Fire' }),
-                    el('dt', { children: [kbd('RMB')] }),
-                    el('dd', { text: 'Aim down sights' }),
-                    el('dt', { children: [kbd('R')] }),
-                    el('dd', { text: 'Reload' }),
-                    el('dt', { children: [kbd('1'), kbd('–'), kbd('5')] }),
-                    el('dd', { text: 'Switch weapon (or scroll wheel)' }),
-                    el('dt', { children: [kbd('B')] }),
-                    el('dd', { text: 'Open the shop' }),
-                    el('dt', { children: [kbd('F')] }),
-                    el('dd', { text: 'Inspect weapon' }),
-                    el('dt', { children: [kbd('Esc')] }),
-                    el('dd', { text: 'Pause' }),
+                    el('h3', { className: 'sh-section-title', text: 'Controls' }),
+                    el('dl', {
+                      className: 'sh-keylist',
+                      children: [
+                        el('dt', { children: [kbd('W'), kbd('A'), kbd('S'), kbd('D')] }),
+                        el('dd', { text: 'Move' }),
+                        el('dt', { children: [kbd('Shift')] }),
+                        el('dd', { text: 'Sprint' }),
+                        el('dt', { children: [kbd('Space')] }),
+                        el('dd', { text: 'Jump' }),
+                        el('dt', { children: [kbd('C')] }),
+                        el('dd', { text: 'Crouch' }),
+                        el('dt', { children: [kbd('LMB')] }),
+                        el('dd', { text: 'Fire' }),
+                        el('dt', { children: [kbd('RMB')] }),
+                        el('dd', { text: 'Aim down sights' }),
+                        el('dt', { children: [kbd('R')] }),
+                        el('dd', { text: 'Reload' }),
+                        el('dt', { children: [kbd('1'), kbd('–'), kbd('5')] }),
+                        el('dd', { text: 'Switch weapon' }),
+                        el('dt', { children: [kbd('B')] }),
+                        el('dd', { text: 'Open the shop' }),
+                        el('dt', { children: [kbd('E')] }),
+                        el('dd', { text: 'Gates and wall guns' }),
+                        el('dt', { children: [kbd('F')] }),
+                        el('dd', { text: 'Inspect weapon' }),
+                        el('dt', { children: [kbd('Esc')] }),
+                        el('dd', { text: 'Pause' }),
+                      ],
+                    }),
                   ],
                 }),
 
-                el('h3', { className: 'sh-section-title', text: 'Technology' }),
-                el('p', {
-                  html:
-                    'Rendering with <strong>Three.js</strong> and WebGL 2. Written in <strong>TypeScript</strong>, bundled by <strong>Vite</strong>. ' +
-                    'Runs entirely in the browser — no server, no install, no downloads after first load.',
+                // Right column: how the thing is built.
+                el('section', {
+                  className: 'sh-credits__group',
+                  children: [
+                    el('h3', { className: 'sh-section-title', text: 'Technology' }),
+                    el('p', {
+                      html:
+                        'Rendered with <strong>Three.js</strong> and WebGL 2, written in ' +
+                        '<strong>TypeScript</strong>, bundled by <strong>Vite</strong>. It runs ' +
+                        'entirely in the browser — no install, and nothing to download after the ' +
+                        'first load.',
+                    }),
+
+                    el('h3', { className: 'sh-section-title', text: 'Art' }),
+                    el('p', {
+                      html:
+                        'Every texture, material, weapon and building is ' +
+                        '<strong>generated at runtime</strong> from canvas drawing and primitive ' +
+                        'geometry. The menu backdrop is the only painted image in the project.',
+                    }),
+
+                    el('h3', { className: 'sh-section-title', text: 'Audio' }),
+                    el('p', {
+                      html:
+                        'There are no sound files. Gunshots, footsteps, voices and the soundtrack ' +
+                        'are <strong>synthesised live with the Web Audio API</strong> — which is ' +
+                        'why the music reharmonises as a wave turns against you.',
+                    }),
+
+                    el('h3', { className: 'sh-section-title', text: 'Performance' }),
+                    el('p', {
+                      html:
+                        'Static geometry is batched per material and district, zombies and ' +
+                        'particles are pooled, and every zombie navigates from one shared flow ' +
+                        'field. If the frame rate dips, the wave thins before the picture does.',
+                    }),
+                  ],
                 }),
 
-                el('h3', { className: 'sh-section-title', text: 'Art' }),
                 el('p', {
+                  className: 'sh-credits__colophon',
                   html:
-                    'Every texture, material, weapon, zombie and building in the 3D world is <strong>generated procedurally at runtime</strong> ' +
-                    'from canvas drawing and primitive geometry. The menu backdrop is the single authored image in the project.',
-                }),
-
-                el('h3', { className: 'sh-section-title', text: 'Audio' }),
-                el('p', {
-                  html:
-                    'There are no audio files. Gunshots, footsteps, zombie voices, UI clicks and the adaptive soundtrack are all ' +
-                    '<strong>synthesised live with the Web Audio API</strong> — which is why the music reharmonises as waves get more dangerous.',
-                }),
-
-                el('h3', { className: 'sh-section-title', text: 'Performance notes' }),
-                el('p', {
-                  html:
-                    'Static geometry is batched per material and map district, zombies and particles are pooled, navigation uses a single shared ' +
-                    'flow field, and shadow casting is budgeted to the nearest few zombies. Use the graphics preset in Settings to trade fidelity for framerate.',
+                    'Built by <strong>Sajal Rajhans</strong> — a browser game with no install, ' +
+                    'no login and no server between you and the village.',
                 }),
               ],
             }),

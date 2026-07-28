@@ -61,7 +61,7 @@ export class ShopMenu {
     private readonly weapons: WeaponManager,
     private readonly callbacks: ShopCallbacks,
   ) {
-    this.creditValue = el('span', { className: 'sh-credits__value', text: '0' });
+    this.creditValue = el('span', { className: 'sh-wallet__value', text: '0' });
     this.grid = el('div', { className: 'sh-buy__grid' });
     this.rail = el('nav', { className: 'sh-buy__rail', attrs: { 'aria-label': 'Categories' } });
     this.categoryTitle = el('h3', { className: 'sh-buy__heading', text: 'Combat' });
@@ -90,9 +90,9 @@ export class ShopMenu {
               ],
             }),
             el('div', {
-              className: 'sh-credits',
+              className: 'sh-wallet',
               children: [
-                el('span', { className: 'sh-credits__label', text: 'Creds' }),
+                el('span', { className: 'sh-wallet__label', text: 'Creds' }),
                 this.creditValue,
               ],
             }),

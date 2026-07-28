@@ -811,20 +811,112 @@ body {
   margin-top: 0.4rem;
 }
 
+/* ==========================================================================
+   Credits modal
+   ========================================================================== */
+
+/* Wider than the other dialogs: this one carries two columns, and at the
+   shared 680px the control list and the prose both end up cramped. */
+.sh-credits-modal {
+  width: min(920px, 100%);
+}
+
+/*
+ * Two columns on a wide dialog: the control list is a dense reference people
+ * scan, while the prose is read left to right. Putting them side by side stops
+ * the keys pushing the writing down out of sight, and stops the writing
+ * stretching to uncomfortable line lengths on a wide screen.
+ */
+.sh-credits {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+  gap: 1.5rem 2.25rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .sh-credits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.sh-credits__group {
+  min-width: 0;
+}
+
+/* The controls card sits in its own panel so it reads as a reference table
+   rather than another paragraph of prose. */
+.sh-credits__group--controls {
+  padding: 1rem 1.15rem 1.15rem;
+  border-radius: var(--sh-radius-md);
+  border: 1px solid var(--sh-panel-border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.sh-credits__group + .sh-credits__group .sh-section-title {
+  margin-top: 0;
+}
+
 .sh-credits p {
   line-height: 1.7;
   color: var(--sh-text-dim);
-  margin: 0 0 1rem;
+  margin: 0 0 1.15rem;
+  /* Long measures are hard to track back on; keep lines to a readable width. */
+  max-width: 62ch;
+}
+
+.sh-credits p:last-child {
+  margin-bottom: 0;
 }
 
 .sh-credits strong {
   color: var(--sh-text);
+  font-weight: 700;
+}
+
+/* A quiet rule above each heading so the sections separate without shouting. */
+.sh-credits .sh-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.6rem 0 0.7rem;
+}
+
+.sh-credits__group--controls .sh-section-title,
+.sh-credits__group > .sh-section-title:first-child {
+  margin-top: 0;
+}
+
+.sh-credits .sh-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 200, 97, 0.28), transparent);
+}
+
+/* Footer line: what the project is, set apart from the body copy. */
+/* Selector deliberately as specific as `.sh-credits p`, which also sets margin
+   and would otherwise win on specificity and keep this hard against the left. */
+.sh-credits p.sh-credits__colophon {
+  grid-column: 1 / -1;
+  margin: 0.4rem auto 0;
+  padding-top: 1.1rem;
+  border-top: 1px solid rgba(255, 200, 97, 0.16);
+  font-size: 0.86rem;
+  line-height: 1.65;
+  color: var(--sh-text-faint);
+  text-align: center;
+}
+
+.sh-credits p.sh-credits__colophon strong {
+  color: var(--sh-gold);
 }
 
 .sh-keylist {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.55rem 1.1rem;
+  /* The key column sizes to its widest chip so the labels line up. */
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5rem 1rem;
   align-items: center;
   margin: 0;
 }
@@ -2087,7 +2179,10 @@ body {
   color: var(--sh-text);
 }
 
-.sh-credits {
+/* The shop's coin balance. Named for what it is: this used to be called
+   .sh-credits, which collided with the credits modal and laid that modal's
+   sections out in a row. */
+.sh-wallet {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
@@ -2097,7 +2192,7 @@ body {
   background: rgba(255, 200, 97, 0.08);
 }
 
-.sh-credits__label {
+.sh-wallet__label {
   font-family: var(--sh-font-display);
   font-size: 0.66rem;
   font-weight: 800;
@@ -2106,7 +2201,7 @@ body {
   color: var(--sh-text-faint);
 }
 
-.sh-credits__value {
+.sh-wallet__value {
   font-family: var(--sh-font-display);
   font-size: 1.7rem;
   font-weight: 800;
